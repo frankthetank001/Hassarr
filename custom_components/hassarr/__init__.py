@@ -136,7 +136,7 @@ def setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up Hassarr from a config entry."""
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN] = config_entry.data
+    hass.data[DOMAIN].update(config_entry.data)
 
     # Register legacy services
     hass.services.async_register(DOMAIN, SERVICE_ADD_RADARR_MOVIE, lambda call: handle_add_movie(hass, call), schema=ADD_RADARR_MOVIE_SCHEMA)
@@ -150,6 +150,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     hass.services.async_register(DOMAIN, SERVICE_GET_ACTIVE_REQUESTS, lambda call: handle_get_active_requests_service(hass, call), schema=GET_ACTIVE_REQUESTS_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_SEARCH_MEDIA, lambda call: handle_search_media_service(hass, call), schema=SEARCH_MEDIA_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_GET_MEDIA_DETAILS, lambda call: handle_get_media_details_service(hass, call), schema=GET_MEDIA_DETAILS_SCHEMA)
+
+    # Forward the config entry to sensor and binary_sensor platforms
+    hass.async_create_task(
+        hass.config_entries.async_forward_entry_setup(config_entry, "sensor")
+    )
+    hass.async_create_task(
+        hass.config_entries.async_forward_entry_setup(config_entry, "binary_sensor")
+    )
 
     # Register update listener
     config_entry.async_on_unload(config_entry.add_update_listener(update_listener))

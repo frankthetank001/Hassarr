@@ -23,6 +23,13 @@ Hassarr is a custom Home Assistant integration to add movies and TV shows to Rad
 - **Episode-level tracking** for TV shows
 - **Request history and user tracking**
 
+### Home Assistant Native Integration
+- **Sensor entities** that automatically update with download status
+- **Binary sensors** for connection and activity monitoring
+- **Data coordinators** for efficient API polling
+- **Rich attributes** for detailed information without service calls
+- **State-based triggers** for reactive automations
+
 ## Requirements
 
 * You must have Home Assistant OS or Home Assistant Core installed (I only tested it on Home Assistant Core)
@@ -75,6 +82,13 @@ Now Hassarr should be installed, and you can create an Automation or Intent to h
 - `hassarr.get_active_requests` - Get all active requests with download progress
 - `hassarr.search_media` - Search for movies or TV shows
 - `hassarr.get_media_details` - Get detailed media information
+
+### Sensor Entities (Recommended)
+- `sensor.hassarr_active_downloads` - Number of active downloads with detailed attributes
+- `sensor.hassarr_download_queue_status` - Queue status with active/pending counts
+- `sensor.hassarr_overseerr_online` - Connection status as text
+- `binary_sensor.hassarr_downloads_active` - True when downloads are active
+- `binary_sensor.hassarr_overseerr_online` - True when Overseerr is connected
 
 ## LLM Integration Examples
 
@@ -141,7 +155,7 @@ All LLM-focused services return structured JSON responses optimized for natural 
         title: "{{ trigger.slots.title }}"
 ```
 
-#### Get Active Downloads
+#### Get Active Downloads (Service-Based)
 ```yaml
 - alias: "Check Active Downloads"
   trigger:
@@ -152,6 +166,33 @@ All LLM-focused services return structured JSON responses optimized for natural 
         - "What's in the queue"
   action:
     - service: hassarr.get_active_requests
+```
+
+#### Get Active Downloads (Sensor-Based - Recommended)
+```yaml
+- alias: "Check Active Downloads - Sensor Based"
+  trigger:
+    - platform: conversation
+      command:
+        - "What's downloading"
+        - "Show active downloads"
+        - "What's in the queue"
+  action:
+    - service: persistent_notification.create
+      data:
+        title: "Download Status"
+        message: |
+          **Active Downloads:** {{ states('sensor.hassarr_active_downloads') }}
+          **Queue Status:** {{ states('sensor.hassarr_download_queue_status') }}
+          **Connection:** {{ states('binary_sensor.hassarr_overseerr_online') }}
+          
+          {% set download_details = state_attr('sensor.hassarr_active_downloads', 'download_details') %}
+          {% if download_details %}
+            **Current Downloads:**
+            {% for download in download_details %}
+            - {{ download.title }}: {{ download.downloads }} files
+            {% endfor %}
+          {% endif %}
 ```
 
 #### Remove Media
@@ -265,6 +306,23 @@ You can change the sentences in `command: ` to whatever sentences you like, add 
           {% endif %}
 ```
 
+## Integration Approaches
+
+### Service-Based Approach (Legacy)
+- **Pros**: Direct control, immediate responses, detailed data
+- **Cons**: Requires manual service calls, no automatic updates, more complex automations
+- **Best for**: One-time queries, detailed status checks, specific media searches
+
+### Sensor-Based Approach (Recommended)
+- **Pros**: Automatic updates, reactive automations, Home Assistant native, better performance
+- **Cons**: Less detailed data, requires polling intervals
+- **Best for**: Monitoring, dashboards, reactive automations, general status tracking
+
+### Hybrid Approach (Best of Both)
+- Use sensors for basic monitoring and reactive automations
+- Use services for detailed queries and specific actions
+- Combine both for comprehensive media management
+
 ## Service Response Actions
 
 The LLM-focused services return specific action types that can be used for conditional logic:
@@ -284,6 +342,39 @@ The LLM-focused services return specific action types that can be used for condi
 ### Search Actions
 - `search_results` - Search results found
 - `details_found` - Media details retrieved successfully
+
+## Sensor Attributes
+
+The sensor entities provide rich attributes for detailed information:
+
+### `sensor.hassarr_active_downloads`
+- **State**: Number of active downloads
+- **Attributes**:
+  - `total_requests`: Total number of requests in queue
+  - `last_update`: Timestamp of last update
+  - `download_details`: Array of download information including:
+    - `title`: Media title
+    - `type`: Media type (movie/tv)
+    - `downloads`: Number of files downloading
+    - `progress`: Array of progress details for each download
+
+### `sensor.hassarr_download_queue_status`
+- **State**: Human-readable queue status (e.g., "3 active, 5 total")
+- **Attributes**:
+  - `active_downloads`: Number of active downloads
+  - `total_requests`: Total requests in queue
+  - `overseerr_online`: Connection status
+  - `last_update`: Timestamp of last update
+
+### `binary_sensor.hassarr_downloads_active`
+- **State**: `on` when downloads are active, `off` when none
+- **Attributes**: Same as active_downloads sensor
+
+### `binary_sensor.hassarr_overseerr_online`
+- **State**: `on` when connected, `off` when disconnected
+- **Attributes**:
+  - `last_update`: Timestamp of last update
+  - `connection_status`: "connected" or "disconnected"
 
 ## Configuration
 
