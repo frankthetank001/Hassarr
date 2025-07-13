@@ -1,0 +1,54 @@
+default_config:
+tts:
+  - platform: google_translate
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+recorder:
+  purge_keep_days: 30
+  commit_interval: 3
+  db_url: postgresql://home-assistant:RedHatRocket%21@localhost:5432/home-assistant?sslmode=disable
+http:
+  server_port: 8123
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 172.16.20.1
+    - 172.16.0.0/12
+    - 127.0.0.1
+    - ::1
+    - 172.16.0.0/12
+    - 192.168.1.122
+rest_command:
+  search_overseerr_movie:
+    url: "https://jellyseerr.shafted.dev/api/v1/search?query={{ query | replace(':', '%3A') | urlencode }}"
+    method: GET
+    headers:
+      X-Api-Key: "MTc1MjMzNjcxNzQyOTAwYTIzMzBmLTdiNDQtNGYyNy1hYjhlLWUzMmZkMDg1ZjhkNQ=="
+  get_overseerr_requests:
+    url: "https://jellyseerr.shafted.dev/api/v1/request"
+    method: GET
+    headers:
+      X-Api-Key: "MTc1MjMzNjcxNzQyOTAwYTIzMzBmLTdiNDQtNGYyNy1hYjhlLWUzMmZkMDg1ZjhkNQ=="
+  delete_overseerr_media:
+    url: "https://jellyseerr.shafted.dev/api/v1/media/{{ media_id }}"
+    method: DELETE
+    headers:
+      X-Api-Key: "MTc1MjMzNjcxNzQyOTAwYTIzMzBmLTdiNDQtNGYyNy1hYjhlLWUzMmZkMDg1ZjhkNQ=="
+  get_media_details:
+    url: "https://jellyseerr.shafted.dev/api/v1/{{ media_type }}/{{ tmdb_id }}"
+    method: GET
+    headers:
+      X-Api-Key: "MTc1MjMzNjcxNzQyOTAwYTIzMzBmLTdiNDQtNGYyNy1hYjhlLWUzMmZkMDg1ZjhkNQ=="
+input_text:
+  last_movie_result:
+    name: "Last Movie Request Result"
+    max: 255
+  last_show_request_status:
+    name: "Last TV Show Request Status"
+    max: 500
+  last_media_details:
+    name: "Last Media Details"
+    max: 1000
+  current_request_context:
+    name: "Current Request Context"
+    max: 255

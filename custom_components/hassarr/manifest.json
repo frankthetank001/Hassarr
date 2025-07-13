@@ -1,11 +1,13 @@
 {
   "domain": "hassarr",
   "name": "Hassarr",
-  "version": "0.2.0",
-  "documentation": "https://github.com/TegridyTate/Hassarr",
-  "issue_tracker": "https://github.com/TegridyTate/Hassarr/issues",
+  "version": "1.0.0",
+  "documentation": "https://github.com/frankthetank001/Hassarr",
+  "issue_tracker": "https://github.com/frankthetank001/Hassarr/issues",
   "requirements": [],
   "dependencies": [],
-  "codeowners": ["@TegridyTate"],
-  "config_flow": true
+  "codeowners": ["@frankthetank001"],
+  "config_flow": true,
+  "iot_class": "local_polling",
+  "integration_type": "service"
 }

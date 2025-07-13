@@ -1,0 +1,804 @@
+check_movie_status_in_overseerr:
+  sequence:
+  - if:
+    - condition: template
+      value_template: '{{ title is not defined or title == '''' }}'
+    then:
+    - action: persistent_notification.create
+      data:
+        notification_id: status_check_missing_title
+        title: Missing Search Title
+        message: '❌ **No search title provided**
+
+          This script requires a title parameter to search for media.
+
+          '
+    - variables:
+        llm_response:
+          action: missing_title
+          error: No search title provided
+          message: Please provide a movie or TV show title to search for
+    - stop: ''
+      response_variable: llm_response
+  - action: rest_command.search_overseerr_movie
+    data:
+      query: '{{ title }}'
+    response_variable: search_response
+    continue_on_error: true
+  - if:
+    - condition: template
+      value_template: "{{ search_response is not defined or \n   search_response.status
+        is not defined or \n   search_response.status != 200 or\n   search_response.content
+        is not defined or\n   search_response.content.results is not defined }}"
+    then:
+    - action: persistent_notification.create
+      data:
+        notification_id: search_error_{{ title | lower | replace(' ', '_') }}
+        title: Overseerr Search Error
+        message: '❌ **Search failed for "{{ title | title }}"**
+
+          Status: {{ search_response.status | default(''No response'') }}
+
+          '
+    - variables:
+        llm_response:
+          action: connection_error
+          error: Failed to search Overseerr
+          searched_title: '{{ title }}'
+          status_code: '{{ search_response.status | default(''Unknown'') }}'
+          message: Search failed - check Overseerr server status
+    - stop: ''
+      response_variable: llm_response
+  - if:
+    - condition: template
+      value_template: '{% set results = search_response.content.results | default([])
+        %} {{ results | length == 0 }}'
+    then:
+    - action: persistent_notification.create
+      data:
+        notification_id: no_results_{{ title | lower | replace(' ', '_') }}
+        title: No Media Found
+        message: "\U0001F50D **No results found for \"{{ title | title }}\"**\n"
+    - variables:
+        llm_response:
+          action: not_found
+          searched_title: '{{ title }}'
+          message: No movies or TV shows found matching '{{ title }}'
+    - stop: ''
+      response_variable: llm_response
+  - variables:
+      first_result: '{% set results = search_response.content.results | default([])
+        %} {{ results[0] if results | length > 0 else {} }}'
+  - action: rest_command.get_media_details
+    data:
+      media_type: '{{ first_result.mediaType | default(''movie'') }}'
+      tmdb_id: '{{ first_result.id | default(0) }}'
+    response_variable: details_response
+    continue_on_error: true
+  - action: rest_command.get_overseerr_requests
+    response_variable: requests_response
+    continue_on_error: true
+  - variables:
+      llm_response:
+        action: found_media
+        searched_title: '{{ title }}'
+        llm_instructions: 'Unless the user specifically asks for different information,
+          focus your response on these key areas: 1. REQUEST STATUS: Current status
+          (pending, downloading, available, etc.) 2. WHO REQUESTED: Display name of
+          the person who requested this media 3. DOWNLOAD PROGRESS: Active downloads,
+          time remaining, completion estimates 4. CONTENT OVERVIEW: Brief plot summary
+          and basic details (year, rating, seasons/runtime)
+
+          All other detailed information is available in the data below if the user
+          asks specific questions.'
+        primary_result:
+          search_info:
+            title: '{{ first_result.title if first_result.title is defined else first_result.name
+              | default(''Unknown'') }}'
+            type: '{{ first_result.mediaType | default(''unknown'') }}'
+            tmdb_id: '{{ first_result.id | default(0) }}'
+            media_id: '{{ first_result.mediaInfo.id if first_result.mediaInfo is defined
+              else ''null'' }}'
+            status: '{{ first_result.mediaInfo.status if first_result.mediaInfo is
+              defined else ''null'' }}'
+            status_text: "{% if first_result.mediaInfo is defined %}\n  {% set status
+              = first_result.mediaInfo.status | default(0) %}\n  {% if status == 1
+              %}Unknown\n  {% elif status == 2 %}Pending Approval\n  {% elif status
+              == 3 %}Processing/Downloading\n  {% elif status == 4 %}Partially Available\n
+              \ {% elif status == 5 %}Available in Library\n  {% else %}Status {{
+              status }}\n  {% endif %}\n{% else %}Not Requested{% endif %}"
+            release_date: '{% if first_result.releaseDate is defined %}{{ first_result.releaseDate
+              }} {% elif first_result.firstAirDate is defined %}{{ first_result.firstAirDate
+              }} {% else %}Unknown{% endif %}'
+            rating: '{{ first_result.voteAverage | default(0) }}'
+            download_info: "{% if first_result.mediaInfo is defined and first_result.mediaInfo.downloadStatus
+              is defined and first_result.mediaInfo.downloadStatus | length > 0 %}\n
+              \ {\n    \"active_downloads\": {{ first_result.mediaInfo.downloadStatus
+              | length }},\n    \"current_download\": {\n      \"title\": \"{{ first_result.mediaInfo.downloadStatus[0].title
+              | default('Unknown') }}\",\n      \"time_left\": \"{{ first_result.mediaInfo.downloadStatus[0].timeLeft
+              | default('Unknown') }}\",\n      \"estimated_completion\": \"{{ first_result.mediaInfo.downloadStatus[0].estimatedCompletionTime
+              | default('Unknown') }}\",\n      \"status\": \"{{ first_result.mediaInfo.downloadStatus[0].status
+              | default('unknown') }}\"\n    },\n    \"all_downloads\": {{ first_result.mediaInfo.downloadStatus
+              | tojson if first_result.mediaInfo.downloadStatus else '[]' }}\n  }\n{%
+              else %}null{% endif %}"
+            request_details: "{% if requests_response.status == 200 and requests_response.content.results
+              is defined %}\n  {% set matching_request = requests_response.content.results
+              | selectattr('media.tmdbId', 'equalto', first_result.id) | list %}\n
+              \ {% if matching_request | length > 0 %}\n    {\n      \"requested_by\":
+              \"{{ matching_request[0].requestedBy.displayName | default(matching_request[0].requestedBy.username
+              | default('Unknown User')) }}\",\n      \"request_date\": \"{{ matching_request[0].createdAt
+              | default('Unknown') }}\",\n      \"request_id\": {{ matching_request[0].id
+              | default('null') }}\n    }\n  {% else %}\n    {\n      \"requested_by\":
+              \"Information not available\",\n      \"request_date\": \"Unknown\",\n
+              \     \"request_id\": null\n    }\n  {% endif %}\n{% else %}\n  {\n
+              \   \"requested_by\": \"Unable to retrieve request info\",\n    \"request_date\":
+              \"Unknown\", \n    \"request_id\": null\n  }\n{% endif %}"
+        content_details:
+          overview: "{% if details_response.status == 200 and details_response.content.overview
+            is defined %}\n  {{ details_response.content.overview | replace('\"',
+            '\\\\\"') }}\n{% else %}Overview not available{% endif %}"
+          tv_info: "{% if first_result.mediaType == 'tv' and details_response.status
+            == 200 %}\n  {\n    \"seasons\": {{ details_response.content.numberOfSeasons
+            | default(0) }},\n    \"episodes\": {{ details_response.content.numberOfEpisodes
+            | default(0) }},\n    \"episode_runtime\": {{ details_response.content.episodeRunTime[0]
+            if details_response.content.episodeRunTime else 'null' }},\n    \"series_status\":
+            \"{{ details_response.content.status | default('Unknown') }}\",\n    \"networks\":
+            \"{{ details_response.content.networks[0].name if details_response.content.networks
+            else 'Unknown' }}\"\n  }\n{% else %}null{% endif %}"
+          movie_info: "{% if first_result.mediaType == 'movie' and details_response.status
+            == 200 %}\n  {\n    \"runtime\": {{ details_response.content.runtime |
+            default(0) }},\n    \"budget\": {{ details_response.content.budget | default(0)
+            }},\n    \"revenue\": {{ details_response.content.revenue | default(0)
+            }},\n    \"production_companies\": \"{{ details_response.content.productionCompanies[0].name
+            if details_response.content.productionCompanies else 'Unknown' }}\"\n
+            \ }\n{% else %}null{% endif %}"
+          genres: "{% if details_response.status == 200 and details_response.content.genres
+            %}\n  {{ details_response.content.genres[:3] | map(attribute='name') |
+            list | tojson }}\n{% else %}[]{% endif %}"
+        full_details:
+          search_response: '{{ search_response.content if search_response.status ==
+            200 else ''null'' }}'
+          media_details: '{{ details_response.content if details_response.status ==
+            200 else ''null'' }}'
+          requests_data: '{{ requests_response.content if requests_response.status
+            == 200 else ''null'' }}'
+        all_results:
+        debug_info:
+          search_status: '{{ search_response.status | default(''undefined'') }}'
+          details_status: '{{ details_response.status | default(''undefined'') }}'
+          requests_status: '{{ requests_response.status | default(''undefined'') }}'
+          has_media_info: '{{ first_result.mediaInfo is defined }}'
+          total_results: '{{ search_response.content.results | length | default(0)
+            }}'
+        message: Found detailed information for "{{ first_result.title if first_result.title
+          is defined else first_result.name | default(title) }}". Focus on request
+          status, who requested it, download progress, and content overview unless
+          asked for specific details.
+  - action: persistent_notification.create
+    data:
+      notification_id: status_{{ title | lower | replace(' ', '_') }}
+      title: "\U0001F4FA Media Status Found"
+      message: 'Found: {{ llm_response.primary_result.search_info.title }}
+
+        Status: {{ llm_response.primary_result.search_info.status_text }}
+
+        Detailed response prepared for LLM analysis.
+
+        '
+  - stop: ''
+    response_variable: llm_response
+  alias: Check Media Status in Overseerr (LLM Focused)
+  description: 'Search for movies/TV shows and return comprehensive data with LLM
+    guidance to focus on: request status, who requested it, download progress, and
+    content overview by default.
+
+    All detailed information is available if the user asks specific questions.'
+  fields:
+    title:
+      name: Title to Search
+      description: Movie or TV show title to search for status check
+      required: true
+      selector:
+        text:
+  mode: single
+  icon: mdi:television-guide
+remove_media_from_overseerr_llm_guided:
+  sequence:
+  - action: rest_command.delete_overseerr_media
+    data:
+      media_id: '{{ media_id }}'
+    response_variable: delete_response
+  - if:
+    - condition: template
+      value_template: "{{ delete_response is not defined or \n   delete_response.status
+        is not defined or\n   (delete_response.status != 200 and delete_response.status
+        != 204) }}"
+    then:
+    - action: persistent_notification.create
+      data:
+        notification_id: remove_media_{{ media_id }}
+        title: Media Removal Failed
+        message: '❌ **Failed to remove media ID {{ media_id }} from Overseerr**
+
+          **Status:** {{ delete_response.status | default(''Unknown'') }}
+
+          This might be due to: - Invalid media ID - Insufficient permissions - Media
+          currently downloading - Overseerr server issues
+
+          '
+    - variables:
+        llm_response: "{\n  \"action\": \"removal_failed\",\n  \"media_id\": {{ media_id
+          }},\n  \"error\": \"Failed to remove media from Overseerr\",\n  \"status_code\":
+          {{ delete_response.status | default('null') }},\n  \"message\": \"Could
+          not remove media ID {{ media_id }} - check permissions, media status, or
+          if ID exists\"\n}\n"
+    else:
+    - action: persistent_notification.create
+      data:
+        notification_id: remove_media_{{ media_id }}
+        title: Media Removed Successfully
+        message: '✅ **Media ID {{ media_id }} has been removed from Overseerr**
+
+          The media item and any associated downloads have been cancelled and removed
+          from your library queue.
+
+          '
+    - variables:
+        llm_response: "{\n  \"action\": \"media_removed\",\n  \"media_id\": {{ media_id
+          }},\n  \"message\": \"Media ID {{ media_id }} has been successfully removed
+          from Overseerr\"\n}\n"
+  - stop: ''
+    response_variable: llm_response
+  alias: Remove Media from Overseerr (LLM Guided)
+  description: 'Remove a movie or TV show from Overseerr by media ID with intelligent
+    response processing.
+
+    RESPONSE HANDLING: - If action = "removal_failed": Tell user removal failed and
+    suggest checking the media ID, permissions, or current status - If action = "media_removed":
+    Tell user the media was successfully removed from Overseerr
+
+    Always use the structured data provided - don''t guess or assume anything not
+    in the response.'
+  fields:
+    media_id:
+      name: Media ID
+      description: The internal Overseerr media ID (found in status checks)
+      required: true
+      selector:
+        text:
+  mode: single
+  icon: mdi:delete
+get_active_overseerr_requests_llm_guided:
+  sequence:
+  - action: rest_command.get_overseerr_requests
+    response_variable: requests_response
+    data: {}
+  - if:
+    - condition: template
+      value_template: "{{ requests_response is not defined or \n   requests_response.status
+        is not defined or \n   requests_response.status != 200 or\n   requests_response.content
+        is not defined }}"
+    then:
+    - action: persistent_notification.create
+      data:
+        notification_id: active_requests_check
+        title: Overseerr Connection Error
+        message: '❌ **Failed to get active requests from Overseerr**
+
+          **Status:** {{ requests_response.status | default(''Unknown'') }}
+
+          Please check Overseerr server status and API configuration.
+
+          '
+    - variables:
+        llm_response:
+          action: connection_error
+          error: Failed to connect to Overseerr server
+          status_code: '{{ requests_response.status | default(''Unknown'') }}'
+          message: Connection error - check Overseerr configuration and server status
+    else:
+    - if:
+      - condition: template
+        value_template: '{% set results = requests_response.content.results | default([])
+          %} {{ results | length == 0 }}'
+      then:
+      - action: persistent_notification.create
+        data:
+          notification_id: active_requests_check
+          title: No Active Requests
+          message: '✅ **No active requests found**
+
+            Your Overseerr queue is empty - all requested content has been processed.
+
+            '
+      - variables:
+          llm_response:
+            action: no_active_requests
+            total_requests: 0
+            message: No active requests found - your Overseerr queue is empty
+      else:
+      - variables:
+          all_requests: '{{ requests_response.content.results | default([]) }}'
+          processing_requests: "{% set results = requests_response.content.results
+            | default([]) %} {{ results | selectattr('media.status', 'equalto', 3)
+            | \n   selectattr('media.downloadStatus', 'defined') | \n   list }}"
+      - action: persistent_notification.create
+        data:
+          notification_id: active_requests_check
+          title: Active Overseerr Requests
+          message: "\U0001F4CB **{{ all_requests | length }} total request(s), {{
+            processing_requests | length }} actively downloading**\n{% if processing_requests
+            | length > 0 %} **Currently Processing:** {% for request in processing_requests[:3]
+            %} **{{ request.type | title }}** - {{ request.media.downloadStatus |
+            length }} files downloading {% for download in request.media.downloadStatus[:2]
+            %} • {{ download.title | truncate(40) }} - {{ ((download.size - download.sizeLeft)
+            / download.size * 100) | round(1) if download.size > 0 else 0 }}% ({{
+            download.timeLeft }} remaining) {% endfor %} {% endfor %} {% else %} No
+            active downloads - {{ all_requests | length }} requests in queue {% endif
+            %}\n"
+      - variables:
+          llm_response:
+            action: active_requests_found
+            llm_instructions: 'Unless the user specifically asks for all requests
+              or different information, focus your response on: 1. CURRENTLY PROCESSING:
+              Show requests that are actively downloading (media_status = 3 with active
+              downloads) 2. DOWNLOAD PROGRESS: Specific progress percentages, time
+              remaining, file details 3. EPISODE DETAILS: For TV shows, which episodes
+              are downloading and their progress 4. COMPLETION ESTIMATES: When downloads
+              will finish
+
+              Only mention other requests (pending, completed, etc.) if specifically
+              asked or if no processing requests exist.'
+            total_requests: '{{ requests_response.content.pageInfo.results | default(all_requests
+              | length) }}'
+            currently_processing:
+              count: '{{ processing_requests | length }}'
+              requests: "[\n  {% for request in processing_requests %}\n  {\n    \"request_id\":
+                {{ request.id }},\n    \"media_id\": {{ request.media.id }},\n    \"tmdb_id\":
+                {{ request.media.tmdbId }},\n    \"type\": \"{{ request.type }}\",\n
+                \   \"title\": \"{{ request.media.title if request.media.title is
+                defined else 'Unknown Title' }}\",\n    \"requested_by\": \"{{ request.requestedBy.displayName
+                }}\",\n    \"created_at\": \"{{ request.createdAt }}\",\n    \"active_downloads\":
+                {{ request.media.downloadStatus | length if request.media.downloadStatus
+                else 0 }},\n    \"download_progress\": [\n      {% if request.media.downloadStatus
+                %}\n      {% for download in request.media.downloadStatus %}\n      {\n
+                \       \"file_title\": \"{{ download.title }}\",\n        \"status\":
+                \"{{ download.status }}\",\n        \"progress_percent\": {{ ((download.size
+                - download.sizeLeft) / download.size * 100) | round(1) if download.size
+                > 0 else 0 }},\n        \"time_left\": \"{{ download.timeLeft }}\",\n
+                \       \"estimated_completion\": \"{{ download.estimatedCompletionTime
+                }}\",\n        \"size_total_gb\": {{ (download.size / 1024 / 1024
+                / 1024) | round(2) }},\n        \"size_remaining_gb\": {{ (download.sizeLeft
+                / 1024 / 1024 / 1024) | round(2) }},\n        \"size_downloaded_gb\":
+                {{ ((download.size - download.sizeLeft) / 1024 / 1024 / 1024) | round(2)
+                }}\n        {% if download.episode %},\n        \"episode_info\":
+                {\n          \"season\": {{ download.episode.seasonNumber }},\n          \"episode\":
+                {{ download.episode.episodeNumber }},\n          \"title\": \"{{ download.episode.title
+                }}\",\n          \"air_date\": \"{{ download.episode.airDate }}\",\n
+                \         \"runtime\": {{ download.episode.runtime }},\n          \"is_finale\":
+                \"{{ download.episode.finaleType if download.episode.finaleType is
+                defined else 'false' }}\"\n        }\n        {% endif %}\n      }{%
+                if not loop.last %},{% endif %}\n      {% endfor %}\n      {% endif
+                %}\n    ]\n  }{% if not loop.last %},{% endif %}\n  {% endfor %}\n]"
+            all_requests_data: "[\n  {% for request in all_requests %}\n  {\n    \"request_id\":
+              {{ request.id }},\n    \"media_id\": {{ request.media.id }},\n    \"tmdb_id\":
+              {{ request.media.tmdbId }},\n    \"type\": \"{{ request.type }}\",\n
+              \   \"status\": {{ request.status }},\n    \"status_text\": \"{% if
+              request.status == 1 %}Pending{% elif request.status == 2 %}Approved{%
+              elif request.status == 3 %}Declined{% else %}Status {{ request.status
+              }}{% endif %}\",\n    \"media_status\": {{ request.media.status }},\n
+              \   \"media_status_text\": \"{% if request.media.status == 1 %}Unknown{%
+              elif request.media.status == 2 %}Pending{% elif request.media.status
+              == 3 %}Processing/Downloading{% elif request.media.status == 4 %}Partially
+              Available{% elif request.media.status == 5 %}Available{% else %}Status
+              {{ request.media.status }}{% endif %}\",\n    \"requested_by\": \"{{
+              request.requestedBy.displayName }}\",\n    \"created_at\": \"{{ request.createdAt
+              }}\",\n    \"external_service_slug\": \"{{ request.media.externalServiceSlug
+              }}\",\n    \"jellyfin_media_id\": \"{{ request.media.jellyfinMediaId
+              if request.media.jellyfinMediaId else 'null' }}\",\n    \"download_status\":
+              {% if request.media.downloadStatus and request.media.downloadStatus
+              | length > 0 %}{\n      \"active_downloads\": {{ request.media.downloadStatus
+              | length }},\n      \"downloads\": [\n        {% for download in request.media.downloadStatus
+              %}\n        {\n          \"title\": \"{{ download.title }}\",\n          \"status\":
+              \"{{ download.status }}\",\n          \"time_left\": \"{{ download.timeLeft
+              }}\",\n          \"estimated_completion\": \"{{ download.estimatedCompletionTime
+              }}\",\n          \"size_gb\": {{ (download.size / 1024 / 1024 / 1024)
+              | round(2) }},\n          \"size_left_gb\": {{ (download.sizeLeft /
+              1024 / 1024 / 1024) | round(2) }},\n          \"size_downloaded_gb\":
+              {{ ((download.size - download.sizeLeft) / 1024 / 1024 / 1024) | round(2)
+              }},\n          \"progress_percent\": {{ ((download.size - download.sizeLeft)
+              / download.size * 100) | round(1) if download.size > 0 else 0 }},\n
+              \         \"size_total_mb\": {{ (download.size / 1024 / 1024) | round(0)
+              }},\n          \"size_remaining_mb\": {{ (download.sizeLeft / 1024 /
+              1024) | round(0) }}\n          {% if download.episode %},\n          \"episode\":
+              {\n            \"season\": {{ download.episode.seasonNumber }},\n            \"episode\":
+              {{ download.episode.episodeNumber }},\n            \"title\": \"{{ download.episode.title
+              }}\",\n            \"air_date\": \"{{ download.episode.airDate }}\",\n
+              \           \"runtime\": {{ download.episode.runtime }},\n            \"finale_type\":
+              \"{{ download.episode.finaleType if download.episode.finaleType is defined
+              else 'null' }}\"\n          }\n          {% endif %}\n        }{% if
+              not loop.last %},{% endif %}\n        {% endfor %}\n      ]\n    }{%
+              else %}null{% endif %}\n  }{% if not loop.last %},{% endif %}\n  {%
+              endfor %}\n]"
+            summary_stats:
+              total_requests: '{{ all_requests | length }}'
+              actively_downloading: '{{ processing_requests | length }}'
+              pending_requests: '{{ all_requests | selectattr(''status'', ''equalto'',
+                1) | list | length }}'
+              completed_requests: '{{ all_requests | selectattr(''media.status'',
+                ''equalto'', 5) | list | length }}'
+              total_active_downloads: "{% set total = 0 %} {% for request in all_requests
+                %}\n  {% if request.media.downloadStatus %}\n    {% set total = total
+                + (request.media.downloadStatus | length) %}\n  {% endif %}\n{% endfor
+                %} {{ total }}"
+            message: Found {{ all_requests | length }} total request(s) with {{ processing_requests
+              | length }} actively downloading. Focus on currently processing downloads
+              unless asked for other details.
+  - stop: ''
+    response_variable: llm_response
+  alias: Get Active Overseerr Requests (Processing Focused)
+  description: 'Gets all active requests from Overseerr with LLM guidance to focus
+    on currently processing downloads by default.
+
+    Default Focus Areas: - Currently downloading content (media_status = 3 with active
+    downloads) - Download progress percentages and time remaining - Episode details
+    for TV shows - Completion estimates
+
+    Features: - Filters processing requests for primary focus - Comprehensive download
+    progress calculations - Episode-specific information including finale status -
+    Complete request data available for detailed questions - LLM-optimized responses
+    with precise progress data
+
+    The LLM will emphasize active downloads unless specifically asked for all requests
+    or other details.'
+  mode: single
+  icon: mdi:download-multiple
+smart_add_media_to_overseerr_unified_llm_guided:
+  sequence:
+  - if:
+    - condition: template
+      value_template: '{{ title is not defined or title == '''' }}'
+    then:
+    - action: persistent_notification.create
+      data:
+        notification_id: media_{{ title | lower | replace(' ', '_') }}
+        title: Missing Search Title
+        message: '❌ **No search title provided**
+
+
+          This script requires a title parameter to search for media.
+
+          Please provide a movie or TV show title to search for.
+
+          '
+    - variables:
+        llm_response:
+          action: missing_title
+          error: No search title provided
+          message: Please provide a movie or TV show title to search for
+    - stop: ''
+      response_variable: llm_response
+  - action: rest_command.search_overseerr_movie
+    data:
+      query: '{{ title }}'
+    response_variable: initial_search_response
+  - if:
+    - condition: template
+      value_template: "{{ initial_search_response is not defined or \n   initial_search_response.status
+        is not defined or \n   initial_search_response.status != 200 or\n   initial_search_response.content
+        is not defined }}"
+    then:
+    - action: persistent_notification.create
+      data:
+        notification_id: media_{{ title | lower | replace(' ', '_') }}
+        title: Overseerr Connection Error
+        message: '❌ **Failed to connect to Overseerr**
+
+          There was an error connecting to your Overseerr server while searching for
+          "{{ title | title }}".
+
+          **Status:** {{ initial_search_response.status | default(''Unknown'') }}
+
+          Please check: - Overseerr server is running - URL configuration is correct
+          - API key is valid - Network connectivity
+
+          '
+    - action: input_text.set_value
+      data:
+        entity_id: input_text.last_media_request_status
+        value: '{{ title | title }} - Overseerr connection error (Status: {{ initial_search_response.status
+          | default(''Unknown'') }})'
+    - variables:
+        llm_response:
+          action: overseerr_connection_error
+          error: Failed to connect to Overseerr server
+          searched_title: '{{ title }}'
+          status_code: '{{ initial_search_response.status | default(''Unknown'') }}'
+          message: Connection error - check Overseerr configuration and server status
+    else:
+    - if:
+      - condition: template
+        value_template: '{% set results = initial_search_response.content.results
+          | default([]) %} {{ results | length == 0 }}'
+      then:
+      - action: persistent_notification.create
+        data:
+          notification_id: media_{{ title | lower | replace(' ', '_') }}
+          title: No Media Found
+          message: '❌ **No results found for "{{ title | title }}"**
+
+            Try searching with: - The exact title or alternative titles - Year of
+            release (e.g., "Title 2023") - Different spelling variations
+
+            '
+      - action: input_text.set_value
+        data:
+          entity_id: input_text.last_media_request_status
+          value: '{{ title | title }} - No media found in search results'
+      - variables:
+          llm_response:
+            action: no_media_found
+            error: No media found in search results
+            searched_title: '{{ title }}'
+            message: No movies or TV shows found matching '{{ title }}' - try a different
+              search term
+      else:
+      - variables:
+          primary_result: '{% set results = initial_search_response.content.results
+            | default([]) %} {{ results[0] }}'
+          media_type: '{{ primary_result.mediaType }}'
+      - if:
+        - condition: template
+          value_template: '{{ primary_result.mediaInfo is defined }}'
+        then:
+        - action: rest_command.get_media_details
+          data:
+            media_type: '{{ media_type }}'
+            tmdb_id: '{{ primary_result.id }}'
+          response_variable: media_details_response
+        - variables:
+            media_details: "{% if media_details_response.status == 200 %}\n  {% if
+              media_type == 'tv' %}\n    {\n      \"overview\": \"{{ media_details_response.content.overview[:300]
+              | replace('\"', '\\\\\"') if media_details_response.content.overview
+              else 'No overview available' }}\",\n      \"seasons\": {{ media_details_response.content.numberOfSeasons
+              | default(0) }},\n      \"episodes\": {{ media_details_response.content.numberOfEpisodes
+              | default(0) }},\n      \"series_status\": \"{{ media_details_response.content.status
+              | default('Unknown') }}\",\n      \"genres\": {{ media_details_response.content.genres[:3]
+              | map(attribute='name') | list | tojson if media_details_response.content.genres
+              else '[]' }},\n      \"runtime\": {{ media_details_response.content.episodeRunTime[0]
+              if media_details_response.content.episodeRunTime else 'null' }},\n      \"networks\":
+              \"{{ media_details_response.content.networks[0].name if media_details_response.content.networks
+              else 'Unknown' }}\"\n    }\n  {% else %}\n    {\n      \"overview\":
+              \"{{ media_details_response.content.overview[:300] | replace('\"', '\\\\\"')
+              if media_details_response.content.overview else 'No overview available'
+              }}\",\n      \"runtime\": {{ media_details_response.content.runtime
+              | default(0) }},\n      \"genres\": {{ media_details_response.content.genres[:3]
+              | map(attribute='name') | list | tojson if media_details_response.content.genres
+              else '[]' }},\n      \"production_companies\": \"{{ media_details_response.content.productionCompanies[0].name
+              if media_details_response.content.productionCompanies else 'Unknown'
+              }}\",\n      \"budget\": {{ media_details_response.content.budget |
+              default(0) }},\n      \"revenue\": {{ media_details_response.content.revenue
+              | default(0) }}\n    }\n  {% endif %}\n{% else %}\n  {\n    \"overview\":
+              \"Details unavailable\",\n    \"runtime\": 0,\n    \"genres\": []\n
+              \ }\n{% endif %}"
+        - action: persistent_notification.create
+          data:
+            notification_id: media_{{ title | lower | replace(' ', '_') }}
+            title: '{{ ''TV Show'' if media_type == ''tv'' else ''Movie'' }} Already
+              in Overseerr'
+            message: "\U0001F50D **\"{{ primary_result.title if primary_result.title
+              is defined else primary_result.name }}\" is already in Overseerr**\n**Type:**
+              {{ media_type | title }} **Status:** {% if primary_result.mediaInfo.status
+              == 1 %}❓ Unknown {%- elif primary_result.mediaInfo.status == 2 %}⏳ Pending
+              Approval {%- elif primary_result.mediaInfo.status == 3 %}\U0001F504
+              Processing/Downloading {%- elif primary_result.mediaInfo.status == 4
+              %}\U0001F4E6 Partially Available {%- elif primary_result.mediaInfo.status
+              == 5 %}✅ Available in Library {%- else %}\U0001F4CB Status {{ primary_result.mediaInfo.status
+              }} {%- endif %}\n**Overview:** {{ media_details.overview }} {% if media_type
+              == 'tv' %} **Seasons:** {{ media_details.seasons }} | **Episodes:**
+              {{ media_details.episodes }} {% else %} **Runtime:** {{ media_details.runtime
+              }} min {% endif %} **Rating:** ⭐ {{ primary_result.voteAverage | default(0)
+              }}/10 **Year:** {% if primary_result.releaseDate is defined %}{{ primary_result.releaseDate[:4]
+              }}{% elif primary_result.firstAirDate is defined %}{{ primary_result.firstAirDate[:4]
+              }}{% else %}Unknown{% endif %} **TMDB ID:** {{ primary_result.id }}\n"
+        - action: input_text.set_value
+          data:
+            entity_id: input_text.last_media_request_status
+            value: '{{ primary_result.title if primary_result.title is defined else
+              primary_result.name }} - Already in Overseerr -  {% if primary_result.mediaInfo.status
+              == 5 %}Available {% elif primary_result.mediaInfo.status == 3 %}Downloading
+              {% elif primary_result.mediaInfo.status == 2 %}Pending {% else %}Status
+              {{ primary_result.mediaInfo.status }} {% endif %}'
+        - variables:
+            llm_response:
+              action: media_already_exists
+              media_type: '{{ media_type }}'
+              media:
+                title: '{{ primary_result.title if primary_result.title is defined
+                  else primary_result.name }}'
+                tmdb_id: '{{ primary_result.id }}'
+                status: '{{ primary_result.mediaInfo.status }}'
+                status_text: '{% if primary_result.mediaInfo.status == 5 %}Available
+                  in Library {% elif primary_result.mediaInfo.status == 3 %}Processing/Downloading
+                  {% elif primary_result.mediaInfo.status == 2 %}Pending Approval
+                  {% else %}Status {{ primary_result.mediaInfo.status }} {% endif
+                  %}'
+                year: '{% if primary_result.releaseDate is defined %}{{ primary_result.releaseDate[:4]
+                  }} {% elif primary_result.firstAirDate is defined %}{{ primary_result.firstAirDate[:4]
+                  }} {% else %}Unknown {% endif %}'
+                rating: '{{ primary_result.voteAverage | default(0) }}'
+                overview_short: '{{ media_details.overview[:150] }}{% if media_details.overview|length
+                  > 150 %}...{% endif %}'
+                seasons: '{{ media_details.seasons if media_type == ''tv'' else null
+                  }}'
+                episodes: '{{ media_details.episodes if media_type == ''tv'' else
+                  null }}'
+                runtime: '{{ media_details.runtime if media_type == ''movie'' else
+                  null }}'
+                genres: '{{ media_details.genres[:2] }}'
+              message: '{{ media_type | title }} already exists in Overseerr'
+        else:
+        - if:
+          - condition: template
+            value_template: '{{ media_type == ''tv'' }}'
+          then:
+          - action: hassarr.add_overseerr_tv_show
+            data:
+              title: '{{ title }}'
+          else:
+          - action: hassarr.add_overseerr_movie
+            data:
+              title: '{{ title }}'
+        - delay:
+            seconds: 5
+        - action: rest_command.search_overseerr_movie
+          data:
+            query: '{{ title }}'
+          response_variable: final_search_response
+        - if:
+          - condition: template
+            value_template: '{% set results = final_search_response.content.results
+              | default([]) %} {{ results | selectattr(''mediaInfo'', ''defined'')
+              | list | length > 0 }}'
+          then:
+          - variables:
+              added_media: '{% set results = final_search_response.content.results
+                | default([]) %} {{ results | selectattr(''mediaInfo'', ''defined'')
+                | first }}'
+          - action: rest_command.get_media_details
+            data:
+              media_type: '{{ added_media.mediaType }}'
+              tmdb_id: '{{ added_media.id }}'
+            response_variable: added_details_response
+          - variables:
+              added_media_details: "{% if added_details_response.status == 200 %}\n
+                \ {% if added_media.mediaType == 'tv' %}\n    {\n      \"overview\":
+                \"{{ added_details_response.content.overview[:300] | replace('\"',
+                '\\\\\"') if added_details_response.content.overview else 'No overview
+                available' }}\",\n      \"seasons\": {{ added_details_response.content.numberOfSeasons
+                | default(0) }},\n      \"episodes\": {{ added_details_response.content.numberOfEpisodes
+                | default(0) }},\n      \"series_status\": \"{{ added_details_response.content.status
+                | default('Unknown') }}\",\n      \"genres\": {{ added_details_response.content.genres[:3]
+                | map(attribute='name') | list | tojson if added_details_response.content.genres
+                else '[]' }}\n    }\n  {% else %}\n    {\n      \"overview\": \"{{
+                added_details_response.content.overview[:300] | replace('\"', '\\\\\"')
+                if added_details_response.content.overview else 'No overview available'
+                }}\",\n      \"runtime\": {{ added_details_response.content.runtime
+                | default(0) }},\n      \"genres\": {{ added_details_response.content.genres[:3]
+                | map(attribute='name') | list | tojson if added_details_response.content.genres
+                else '[]' }}\n    }\n  {% endif %}\n{% else %}\n  {\n    \"overview\":
+                \"Details unavailable\",\n    \"seasons\": 0,\n    \"episodes\": 0,\n
+                \   \"runtime\": 0,\n    \"genres\": []\n  }\n{% endif %}"
+          - action: persistent_notification.create
+            data:
+              notification_id: media_{{ title | lower | replace(' ', '_') }}
+              title: '{{ ''TV Show'' if added_media.mediaType == ''tv'' else ''Movie''
+                }} Successfully Added'
+              message: "✅ **\"{{ added_media.title if added_media.title is defined
+                else added_media.name }}\" has been added to Overseerr**\n**Type:**
+                {{ added_media.mediaType | title }} **Status:** {% if added_media.mediaInfo.status
+                == 2 %}⏳ Pending Approval {% elif added_media.mediaInfo.status ==
+                3 %}\U0001F504 Processing {% else %}\U0001F4CB Status {{ added_media.mediaInfo.status
+                }} {% endif %} **Year:** {% if added_media.releaseDate is defined
+                %}{{ added_media.releaseDate[:4] }}{% elif added_media.firstAirDate
+                is defined %}{{ added_media.firstAirDate[:4] }}{% else %}Unknown{%
+                endif %} **Rating:** ⭐ {{ added_media.voteAverage | default(0) }}/10
+                **TMDB ID:** {{ added_media.id }}\n**Overview:** {{ added_media_details.overview
+                }} {% if added_media.mediaType == 'tv' %} **Seasons:** {{ added_media_details.seasons
+                }} | **Episodes:** {{ added_media_details.episodes }} {% else %} **Runtime:**
+                {{ added_media_details.runtime }} min {% endif %}\n"
+          - action: input_text.set_value
+            data:
+              entity_id: input_text.last_media_request_status
+              value: '{{ added_media.title if added_media.title is defined else added_media.name
+                }} - Added successfully - Pending approval'
+          - variables:
+              llm_response:
+                action: media_added_successfully
+                media_type: '{{ added_media.mediaType }}'
+                media:
+                  title: '{{ added_media.title if added_media.title is defined else
+                    added_media.name }}'
+                  tmdb_id: '{{ added_media.id }}'
+                  status: '{{ added_media.mediaInfo.status }}'
+                  status_text: '{% if added_media.mediaInfo.status == 2 %}Pending
+                    Approval {% elif added_media.mediaInfo.status == 3 %}Processing
+                    {% else %}Status {{ added_media.mediaInfo.status }} {% endif %}'
+                  year: '{% if added_media.releaseDate is defined %}{{ added_media.releaseDate[:4]
+                    }} {% elif added_media.firstAirDate is defined %}{{ added_media.firstAirDate[:4]
+                    }} {% else %}Unknown {% endif %}'
+                  rating: '{{ added_media.voteAverage | default(0) }}'
+                  overview_short: '{{ added_media_details.overview[:150] }}{% if added_media_details.overview|length
+                    > 150 %}...{% endif %}'
+                  seasons: '{{ added_media_details.seasons if added_media.mediaType
+                    == ''tv'' else null }}'
+                  episodes: '{{ added_media_details.episodes if added_media.mediaType
+                    == ''tv'' else null }}'
+                  runtime: '{{ added_media_details.runtime if added_media.mediaType
+                    == ''movie'' else null }}'
+                  genres: '{{ added_media_details.genres[:2] }}'
+                message: '{{ added_media.mediaType | title }} successfully added to
+                  Overseerr'
+          else:
+          - action: persistent_notification.create
+            data:
+              notification_id: media_{{ title | lower | replace(' ', '_') }}
+              title: Media Request Failed
+              message: '❌ **Failed to add "{{ title | title }}" to Overseerr**
+
+                The media was found in search results but could not be added to your
+                library. This might be due to: - Overseerr configuration issues -
+                Media not available on your indexers - Permission problems
+
+                **Available media found:**  {% set results = initial_search_response.content.results
+                | default([]) %} {% for item in results[:5] %} - {{ item.title if
+                item.title is defined else item.name }} ({{ item.mediaType | title
+                }}, {% if item.releaseDate is defined %}{{ item.releaseDate[:4] }}{%
+                elif item.firstAirDate is defined %}{{ item.firstAirDate[:4] }}{%
+                else %}Unknown{% endif %}) - TMDB: {{ item.id }} {% endfor %}
+
+                '
+          - action: input_text.set_value
+            data:
+              entity_id: input_text.last_media_request_status
+              value: '{{ title | title }} - Request failed - Check Overseerr configuration'
+          - variables:
+              llm_response:
+                action: media_add_failed
+                error: Media could not be added to Overseerr
+                searched_title: '{{ title }}'
+                available_media: "{% set results = initial_search_response.content.results
+                  | default([]) %} [\n  {% for item in results[:5] %}\n  {\n    \"title\":
+                  \"{{ item.title if item.title is defined else item.name }}\",\n
+                  \   \"type\": \"{{ item.mediaType }}\",\n    \"tmdb_id\": \"{{ item.id
+                  }}\",\n    \"year\": \"{% if item.releaseDate is defined %}{{ item.releaseDate[:4]
+                  }}{% elif item.firstAirDate is defined %}{{ item.firstAirDate[:4]
+                  }}{% else %}Unknown{% endif %}\",\n    \"rating\": \"{{ item.voteAverage
+                  | default(0) }}\"\n  }{% if not loop.last %},{% endif %}\n  {% endfor
+                  %}\n]"
+                message: Media request failed - check Overseerr configuration
+  - stop: ''
+    response_variable: llm_response
+  alias: Smart Add Media to Overseerr (Unified LLM Guided)
+  description: 'Unified script that handles both movies and TV shows intelligently.
+
+    Features: - Auto-detects media type (movie/tv) from search results - Calls appropriate
+    Hassarr service based on media type - Validates input parameters before execution
+    - Fetches complete media details from TMDB - Provides comprehensive LLM-friendly
+    JSON responses - Handles all error cases gracefully - Returns download progress
+    when available
+
+    Returns structured JSON data for LLM interpretation: - action: "missing_title"
+    | "overseerr_connection_error" | "no_media_found" | "media_already_exists" | "media_added_successfully"
+    | "media_add_failed" - media_type: "movie" | "tv" (when applicable) - media: {title,
+    tmdb_id, status, status_text, year, rating, overview_short, seasons/episodes/runtime,
+    genres} (when applicable) - message: Human-readable summary'
+  fields:
+    title:
+      name: Media Title
+      description: Movie or TV show title to search for and add
+      required: true
+      selector:
+        text:
+  mode: single
+  icon: mdi:plus-circle-multiple
