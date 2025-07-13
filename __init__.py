@@ -118,12 +118,9 @@ async def handle_get_media_details_service(hass: HomeAssistant, call: ServiceCal
 
 
 
-async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
-    """Set up Hassarr from a config entry."""
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN].update(config_entry.data)
-
-    # Register legacy services
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up the Hassarr integration."""
+    # Register services for legacy support
     hass.services.async_register(DOMAIN, SERVICE_ADD_RADARR_MOVIE, handle_add_movie, schema=ADD_RADARR_MOVIE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_ADD_SONARR_TV_SHOW, handle_add_tv_show, schema=ADD_SONARR_TV_SHOW_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_ADD_OVERSEERR_MOVIE, handle_add_overseerr_movie, schema=ADD_OVERSEERR_MOVIE_SCHEMA)
@@ -135,6 +132,13 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     hass.services.async_register(DOMAIN, SERVICE_GET_ACTIVE_REQUESTS, handle_get_active_requests_service, schema=GET_ACTIVE_REQUESTS_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_SEARCH_MEDIA, handle_search_media_service, schema=SEARCH_MEDIA_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_GET_MEDIA_DETAILS, handle_get_media_details_service, schema=GET_MEDIA_DETAILS_SCHEMA)
+
+    return True
+
+async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+    """Set up Hassarr from a config entry."""
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN].update(config_entry.data)
 
     # Forward the config entry to sensor and binary_sensor platforms
     hass.async_create_task(
