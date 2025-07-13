@@ -153,10 +153,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
 
     # Forward the config entry to sensor and binary_sensor platforms
     hass.async_create_task(
-        hass.config_entries.async_forward_entry_setup(config_entry, "sensor")
-    )
-    hass.async_create_task(
-        hass.config_entries.async_forward_entry_setup(config_entry, "binary_sensor")
+        hass.config_entries.async_forward_entry_setups(config_entry, ["sensor", "binary_sensor"])
     )
 
     # Register update listener
