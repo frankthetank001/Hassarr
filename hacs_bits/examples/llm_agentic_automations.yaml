@@ -1,0 +1,321 @@
+# Hassarr LLM Agentic Integration Examples
+# This file demonstrates how to use Hassarr services with LLM agentic actions
+# instead of traditional conversation triggers
+
+# =============================================================================
+# LLM AGENTIC APPROACH (RECOMMENDED)
+# =============================================================================
+
+# These examples show how an LLM can directly call Hassarr services
+# and interpret the structured responses for natural language interactions
+
+# =============================================================================
+# SERVICE-BASED ACTIONS FOR LLM
+# =============================================================================
+
+# The following services are available for LLM agentic actions:
+
+# 1. Check Media Status
+# Service: hassarr.check_media_status
+# Parameters: title (string)
+# Returns: Structured JSON with media status, download progress, request details
+# Use case: "What's the status of The Matrix?" -> LLM calls this service
+
+# 2. Get Active Downloads
+# Service: hassarr.get_active_requests  
+# Parameters: none
+# Returns: Structured JSON with download queue status and progress
+# Use case: "What's downloading?" -> LLM calls this service
+
+# 3. Search Media
+# Service: hassarr.search_media
+# Parameters: query (string)
+# Returns: Structured JSON with search results
+# Use case: "Search for action movies" -> LLM calls this service
+
+# 4. Remove Media
+# Service: hassarr.remove_media
+# Parameters: media_id (string)
+# Returns: Structured JSON with removal status
+# Use case: "Remove media 12345" -> LLM calls this service
+
+# 5. Add Media (Legacy services)
+# Service: hassarr.add_overseerr_movie / hassarr.add_overseerr_tv_show
+# Parameters: title (string)
+# Use case: "Add The Matrix to Overseerr" -> LLM calls appropriate service
+
+# =============================================================================
+# LLM RESPONSE INTERPRETATION EXAMPLES
+# =============================================================================
+
+# Example 1: Status Check Response Interpretation
+# When LLM calls hassarr.check_media_status with title="The Matrix"
+# Response structure:
+# {
+#   "action": "found_media",
+#   "llm_instructions": "Focus on request status, who requested it, download progress, and content overview unless asked for specific details.",
+#   "primary_result": {
+#     "search_info": {
+#       "title": "The Matrix",
+#       "type": "movie", 
+#       "status": 3,
+#       "status_text": "Processing/Downloading",
+#       "download_info": {
+#         "active_downloads": 1,
+#         "current_download": {
+#           "title": "The Matrix (1999) 1080p",
+#           "time_left": "2h 15m",
+#           "estimated_completion": "2024-01-15T14:30:00Z"
+#         }
+#       },
+#       "request_details": {
+#         "requested_by": "John Doe",
+#         "request_date": "2024-01-15T10:00:00Z"
+#       }
+#     },
+#     "content_details": {
+#       "overview": "A computer hacker learns from mysterious rebels...",
+#       "genres": ["Action", "Sci-Fi"]
+#     }
+#   },
+#   "message": "Found detailed information for 'The Matrix'. Focus on request status, who requested it, download progress, and content overview unless asked for specific details."
+# }
+
+# LLM can interpret this and respond naturally:
+# "The Matrix is currently downloading. John Doe requested it on January 15th, 
+# and it has about 2 hours and 15 minutes remaining. It's a 1999 action/sci-fi 
+# movie about a computer hacker."
+
+# =============================================================================
+# SENSOR-BASED MONITORING (FOR BACKGROUND CONTEXT)
+# =============================================================================
+
+# These sensors provide real-time status for LLM context:
+
+# How the binary_sensor.hassarr_overseerr_online gets its state:
+# 1. The binary sensor is created in binary_sensor.py and uses the coordinator
+# 2. The coordinator (in sensor.py) polls the Overseerr API every UPDATE_INTERVAL seconds
+# 3. In _async_update_data() function:
+#    - If api.get_requests() succeeds: overseerr_online = True
+#    - If api.get_requests() fails (exception): overseerr_online = False
+# 4. The binary sensor reads: self.coordinator.data.get("overseerr_online", False)
+# 5. If True: binary sensor state = 'on' (connected)
+# 6. If False: binary sensor state = 'off' (disconnected)
+# 7. LLM can check this sensor state before making service calls
+# 8. Traditional automations can trigger on state changes for notifications
+
+# Example automation for monitoring download status changes:
+# - alias: "Download Status Monitor - Sensor Based"
+#   description: "Monitor download status using sensors for LLM context"
+#   trigger:
+#     - platform: state
+#       entity_id: sensor.hassarr_active_downloads
+#       # Trigger when download count changes
+#   action:
+#     - service: persistent_notification.create
+#       data:
+#         title: "Download Status Changed"
+#         message: |
+#           **Active Downloads:** {{ states('sensor.hassarr_active_downloads') }}
+#           **Queue Status:** {{ states('sensor.hassarr_download_queue_status') }}
+#           **Connection:** {{ states('binary_sensor.hassarr_overseerr_online') }}
+#           
+#           {% set download_details = state_attr('sensor.hassarr_active_downloads', 'download_details') %}
+#           {% if download_details %}
+#             **Current Downloads:**
+#             {% for download in download_details %}
+#             - {{ download.title }}: {{ download.downloads }} files downloading
+#             {% endfor %}
+#           {% endif %}
+
+# Example automation for monitoring connection status:
+# - alias: "Connection Status Monitor"
+#   description: "Monitor Overseerr connection for LLM awareness"
+#   trigger:
+#     - platform: state
+#       entity_id: binary_sensor.hassarr_overseerr_online
+#   action:
+#     - service: persistent_notification.create
+#       data:
+#         title: "Overseerr Connection Status"
+#         message: |
+#           {% if is_state('binary_sensor.hassarr_overseerr_online', 'on') %}
+#             ✅ Overseerr is now online and available for media requests
+#           {% else %}
+#             ❌ Overseerr is offline - media requests may fail
+#           {% endif %}
+
+# =============================================================================
+# LLM AGENTIC CONNECTION MONITORING
+# =============================================================================
+
+# In the LLM agentic approach, connection status is handled differently:
+
+# Data Flow for Connection Status:
+# 1. Coordinator calls api.get_requests() every 30 seconds
+# 2. If successful: returns {"overseerr_online": True, ...}
+# 3. If exception: returns {"overseerr_online": False, ...}
+# 4. Binary sensor reads coordinator.data["overseerr_online"]
+# 5. Binary sensor state becomes 'on' or 'off'
+# 6. LLM can check states('binary_sensor.hassarr_overseerr_online')
+
+# Method 1: LLM Checks Sensor State Directly
+# When LLM receives a query, it can check the sensor state:
+# - Check: states('binary_sensor.hassarr_overseerr_online')
+# - If 'off': LLM responds with connection error
+# - If 'on': LLM proceeds with service calls
+
+# Method 2: LLM Handles Connection Errors from Service Responses
+# When LLM calls any service, it may receive:
+# {
+#   "action": "connection_error",
+#   "error": "Failed to connect to Overseerr server",
+#   "message": "Connection error - check Overseerr configuration and server status"
+# }
+# LLM then responds: "I'm unable to connect to your media server right now. Please check if Overseerr is running."
+
+# Method 3: Proactive Connection Monitoring (Optional)
+# You can still use traditional automations for background monitoring:
+# - Monitor binary_sensor.hassarr_overseerr_online state changes
+# - Send notifications when connection status changes
+# - LLM can reference these notifications for context
+
+# Example: LLM Workflow with Connection Checking
+# User: "What's the status of The Matrix?"
+# LLM Action 1: Check binary_sensor.hassarr_overseerr_online state
+# LLM Action 2: If online, call hassarr.check_media_status
+# LLM Action 3: If offline, respond with connection error
+# LLM Response: Natural language response based on connection status
+
+# =============================================================================
+# LLM INTEGRATION PATTERNS
+# =============================================================================
+
+# Pattern 1: Direct Service Call with Response Interpretation
+# LLM receives user query -> Calls appropriate service -> Interprets structured response -> Responds naturally
+
+# Pattern 2: Context-Aware Responses
+# LLM checks sensor states first -> Calls services if needed -> Provides comprehensive response
+
+# Pattern 3: Multi-Step Actions
+# LLM calls search service -> User selects result -> LLM calls add/status service
+
+# =============================================================================
+# EXAMPLE LLM WORKFLOWS
+# =============================================================================
+
+# Workflow 1: Status Inquiry
+# User: "What's the status of The Matrix?"
+# LLM Action: Call hassarr.check_media_status with title="The Matrix"
+# LLM Response: Interpret JSON response and provide natural language summary
+
+# Workflow 2: Queue Check
+# User: "What's downloading right now?"
+# LLM Action: Call hassarr.get_active_requests
+# LLM Response: Interpret download queue and provide progress summary
+
+# Workflow 3: Media Addition
+# User: "Add The Matrix to Overseerr"
+# LLM Action: Call hassarr.add_overseerr_movie with title="The Matrix"
+# LLM Response: Confirm addition and provide next steps
+
+# Workflow 4: Media Removal
+# User: "Remove media 12345"
+# LLM Action: Call hassarr.remove_media with media_id="12345"
+# LLM Response: Confirm removal or explain any issues
+
+# Workflow 5: Search and Add
+# User: "Search for action movies and add the first one"
+# LLM Action 1: Call hassarr.search_media with query="action movies"
+# LLM Action 2: Call hassarr.add_overseerr_movie with selected title
+# LLM Response: Provide search results and confirm addition
+
+# =============================================================================
+# ERROR HANDLING FOR LLM
+# =============================================================================
+
+# LLM should handle these response actions appropriately:
+
+# Connection Errors:
+# - action: "connection_error"
+# - LLM Response: "I'm unable to connect to your media server right now. Please check if Overseerr is running."
+
+# Not Found:
+# - action: "not_found" 
+# - LLM Response: "I couldn't find any media matching your search. Try a different title or check the spelling."
+
+# Missing Parameters:
+# - action: "missing_title" or "missing_media_id"
+# - LLM Response: "I need more information to help you. Please provide a title or media ID."
+
+# Successful Actions:
+# - action: "found_media", "media_removed", "active_requests_found"
+# - LLM Response: Natural language summary of the results
+
+# =============================================================================
+# ADVANCED LLM INTEGRATION
+# =============================================================================
+
+# Multi-Modal Responses
+# LLM can combine sensor data with service responses:
+# - Check sensor.hassarr_active_downloads for current count
+# - Call hassarr.get_active_requests for detailed progress
+# - Provide comprehensive status report
+
+# Predictive Actions
+# LLM can use sensor trends to suggest actions:
+# - If downloads are slow, suggest checking connection
+# - If queue is full, suggest prioritizing requests
+
+# Contextual Awareness
+# LLM can maintain conversation context:
+# - Remember previous searches
+# - Reference specific media IDs from earlier in conversation
+# - Provide follow-up suggestions
+
+# =============================================================================
+# IMPLEMENTATION NOTES
+# =============================================================================
+
+# 1. Service Results Storage
+# Results are stored in hass.data[f"{DOMAIN}_results"]:
+# - last_status_check: Result of last status check
+# - last_requests: Result of last active requests check
+# - last_search: Result of last media search
+# - last_removal: Result of last media removal
+
+# 2. Response Format
+# All LLM-focused services return structured JSON with:
+# - action: Type of result (found_media, not_found, etc.)
+# - llm_instructions: Guidance for LLM response focus
+# - primary_result: Main data payload
+# - message: Human-readable summary
+
+# 3. Error Handling
+# Services include comprehensive error handling with specific action types
+# LLM can use action types to provide appropriate responses
+
+# 4. Performance
+# Services are optimized for LLM consumption with:
+# - Structured data formats
+# - Clear action types
+# - Rich metadata
+# - Download progress tracking
+
+# =============================================================================
+# MIGRATION FROM CONVERSATION TRIGGERS
+# =============================================================================
+
+# To migrate from conversation triggers to LLM agentic approach:
+
+# 1. Remove conversation triggers from automations
+# 2. Expose services to LLM through your integration
+# 3. Configure LLM to call services directly
+# 4. Use structured responses for natural language generation
+
+# Benefits of LLM agentic approach:
+# - More flexible natural language understanding
+# - Better context awareness
+# - Improved error handling
+# - Richer response capabilities
+# - No need for rigid command patterns 

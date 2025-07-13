@@ -9,7 +9,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     DOMAIN,
-    BINARY_SENSOR_OVerseerr_ONLINE,
+    BINARY_SENSOR_OVERSEERR_ONLINE,
     BINARY_SENSOR_DOWNLOADS_ACTIVE,
 )
 
@@ -82,7 +82,7 @@ class HassarrOverseerrOnlineBinarySensor(BinarySensorEntity):
         """Initialize the binary sensor."""
         self.coordinator = coordinator
         self._attr_name = "Overseerr Online"
-        self._attr_unique_id = f"{DOMAIN}_{BINARY_SENSOR_OVerseerr_ONLINE}"
+        self._attr_unique_id = f"{DOMAIN}_{BINARY_SENSOR_OVERSEERR_ONLINE}"
         self._attr_icon = "mdi:server-network"
         
     @property
