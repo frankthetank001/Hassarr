@@ -249,23 +249,29 @@ class LLMResponseBuilder:
         }
 
 # Legacy functions for backward compatibility
-def fetch_data(url: str, headers: dict) -> dict | None:
+async def fetch_data(url: str, headers: dict) -> dict | None:
     """Fetch data from the given URL with headers."""
-    response = requests.get(url, headers=headers)
-    if response.status_code == requests.codes.ok:
-        return response.json()
-    else:
-        _LOGGER.error(f"Failed to fetch data from {url}: {response.text}")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    content = await response.text()
+                    return json.loads(content) if content else None
+                else:
+                    _LOGGER.error(f"Failed to fetch data from {url}: {await response.text()}")
+                    return None
+    except Exception as e:
+        _LOGGER.error(f"Request failed: {e}")
         return None
 
-def get_root_folder_path(url: str, headers: dict) -> str | None:
+async def get_root_folder_path(url: str, headers: dict) -> str | None:
     """Get root folder path from the given URL."""
-    data = fetch_data(url, headers)
+    data = await fetch_data(url, headers)
     if data:
         return data[0].get("path")
     return None
 
-def handle_add_media(hass: HomeAssistant, call: ServiceCall, media_type: str, service_name: str) -> None:
+async def handle_add_media(hass: HomeAssistant, call: ServiceCall, media_type: str, service_name: str) -> None:
     """Handle the service action to add a media (movie or TV show)."""
     _LOGGER.info(f"Received call data: {call.data}")
     title = call.data.get("title")
@@ -292,14 +298,14 @@ def handle_add_media(hass: HomeAssistant, call: ServiceCall, media_type: str, se
     # Fetch media list
     search_url = urljoin(url, f"api/v3/{media_type}/lookup?term={title}")
     _LOGGER.info(f"Fetching media list from URL: {search_url}")
-    media_list = fetch_data(search_url, headers)
+    media_list = await fetch_data(search_url, headers)
 
     if media_list:
         media_data = media_list[0]
 
         # Get root folder path
         root_folder_url = urljoin(url, "api/v3/rootfolder")
-        root_folder_path = get_root_folder_path(root_folder_url, headers)
+        root_folder_path = await get_root_folder_path(root_folder_url, headers)
         if not root_folder_path:
             return
 
@@ -323,12 +329,16 @@ def handle_add_media(hass: HomeAssistant, call: ServiceCall, media_type: str, se
         # Add media
         add_url = urljoin(url, f"api/v3/{media_type}")
         _LOGGER.info(f"Adding media to URL: {add_url} with payload: {payload}")
-        add_response = requests.post(add_url, json=payload, headers=headers)
-
-        if add_response.status_code == requests.codes.created:
-            _LOGGER.info(f"Successfully added {media_type} '{title}' to {service_name.capitalize()}")
-        else:
-            _LOGGER.error(f"Failed to add {media_type} '{title}' to {service_name.capitalize()}: {add_response.text}")
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(add_url, json=payload, headers=headers) as response:
+                    if response.status == 201:
+                        _LOGGER.info(f"Successfully added {media_type} '{title}' to {service_name.capitalize()}")
+                    else:
+                        _LOGGER.error(f"Failed to add {media_type} '{title}' to {service_name.capitalize()}: {await response.text()}")
+        except Exception as e:
+            _LOGGER.error(f"Request failed: {e}")
     else:
         _LOGGER.info(f"No results found for {media_type} '{title}'")
 
@@ -354,7 +364,7 @@ async def handle_add_overseerr_media(hass: HomeAssistant, call: ServiceCall, med
         return
 
     api = OverseerrAPI(url, api_key)
-    search_results = api.search_media(title)
+    search_results = await api.search_media(title)
 
     if search_results and search_results.get("results"):
         media_data = search_results["results"][0]

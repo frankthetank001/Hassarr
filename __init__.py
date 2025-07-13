@@ -64,13 +64,13 @@ GET_MEDIA_DETAILS_SCHEMA = vol.Schema({
     vol.Required("tmdb_id"): cv.string,
 })
 
-def handle_add_movie(hass: HomeAssistant, call: ServiceCall) -> None:
+async def handle_add_movie(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle the service action to add a movie to Radarr."""
-    handle_add_media(hass, call, "movie", "radarr")
+    await handle_add_media(hass, call, "movie", "radarr")
 
-def handle_add_tv_show(hass: HomeAssistant, call: ServiceCall) -> None:
+async def handle_add_tv_show(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle the service action to add a TV show to Sonarr."""
-    handle_add_media(hass, call, "series", "sonarr")
+    await handle_add_media(hass, call, "series", "sonarr")
 
 async def handle_add_overseerr_movie(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle the service action to add a movie to Overseerr."""
@@ -118,11 +118,11 @@ async def handle_get_media_details_service(hass: HomeAssistant, call: ServiceCal
 
 def setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Hassarr integration."""
-    # Register legacy services
-    hass.services.register(DOMAIN, SERVICE_ADD_RADARR_MOVIE, lambda call: handle_add_movie(hass, call), schema=ADD_RADARR_MOVIE_SCHEMA)
-    hass.services.register(DOMAIN, SERVICE_ADD_SONARR_TV_SHOW, lambda call: handle_add_tv_show(hass, call), schema=ADD_SONARR_TV_SHOW_SCHEMA)
-    hass.services.register(DOMAIN, SERVICE_ADD_OVERSEERR_MOVIE, lambda call: handle_add_overseerr_movie(hass, call), schema=ADD_OVERSEERR_MOVIE_SCHEMA)
-    hass.services.register(DOMAIN, SERVICE_ADD_OVERSEERR_TV_SHOW, lambda call: handle_add_overseerr_tv_show(hass, call), schema=ADD_OVERSEERR_TV_SHOW_SCHEMA)
+    # Register all services using async_create_task since they're all async now
+    hass.services.register(DOMAIN, SERVICE_ADD_RADARR_MOVIE, lambda call: hass.async_create_task(handle_add_movie(hass, call)), schema=ADD_RADARR_MOVIE_SCHEMA)
+    hass.services.register(DOMAIN, SERVICE_ADD_SONARR_TV_SHOW, lambda call: hass.async_create_task(handle_add_tv_show(hass, call)), schema=ADD_SONARR_TV_SHOW_SCHEMA)
+    hass.services.register(DOMAIN, SERVICE_ADD_OVERSEERR_MOVIE, lambda call: hass.async_create_task(handle_add_overseerr_movie(hass, call)), schema=ADD_OVERSEERR_MOVIE_SCHEMA)
+    hass.services.register(DOMAIN, SERVICE_ADD_OVERSEERR_TV_SHOW, lambda call: hass.async_create_task(handle_add_overseerr_tv_show(hass, call)), schema=ADD_OVERSEERR_TV_SHOW_SCHEMA)
     
     # Register new LLM-focused services
     hass.services.register(DOMAIN, SERVICE_CHECK_MEDIA_STATUS, lambda call: hass.async_create_task(handle_check_media_status_service(hass, call)), schema=CHECK_MEDIA_STATUS_SCHEMA)
