@@ -116,22 +116,7 @@ async def handle_get_media_details_service(hass: HomeAssistant, call: ServiceCal
     hass.data[f"{DOMAIN}_results"]["last_details"] = result
     _LOGGER.info(f"Media details result: {result}")
 
-def setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up the Hassarr integration."""
-    # Register all services using async_create_task since they're all async now
-    hass.services.register(DOMAIN, SERVICE_ADD_RADARR_MOVIE, lambda call: hass.async_create_task(handle_add_movie(hass, call)), schema=ADD_RADARR_MOVIE_SCHEMA)
-    hass.services.register(DOMAIN, SERVICE_ADD_SONARR_TV_SHOW, lambda call: hass.async_create_task(handle_add_tv_show(hass, call)), schema=ADD_SONARR_TV_SHOW_SCHEMA)
-    hass.services.register(DOMAIN, SERVICE_ADD_OVERSEERR_MOVIE, lambda call: hass.async_create_task(handle_add_overseerr_movie(hass, call)), schema=ADD_OVERSEERR_MOVIE_SCHEMA)
-    hass.services.register(DOMAIN, SERVICE_ADD_OVERSEERR_TV_SHOW, lambda call: hass.async_create_task(handle_add_overseerr_tv_show(hass, call)), schema=ADD_OVERSEERR_TV_SHOW_SCHEMA)
-    
-    # Register new LLM-focused services
-    hass.services.register(DOMAIN, SERVICE_CHECK_MEDIA_STATUS, lambda call: hass.async_create_task(handle_check_media_status_service(hass, call)), schema=CHECK_MEDIA_STATUS_SCHEMA)
-    hass.services.register(DOMAIN, SERVICE_REMOVE_MEDIA, lambda call: hass.async_create_task(handle_remove_media_service(hass, call)), schema=REMOVE_MEDIA_SCHEMA)
-    hass.services.register(DOMAIN, SERVICE_GET_ACTIVE_REQUESTS, lambda call: hass.async_create_task(handle_get_active_requests_service(hass, call)), schema=GET_ACTIVE_REQUESTS_SCHEMA)
-    hass.services.register(DOMAIN, SERVICE_SEARCH_MEDIA, lambda call: hass.async_create_task(handle_search_media_service(hass, call)), schema=SEARCH_MEDIA_SCHEMA)
-    hass.services.register(DOMAIN, SERVICE_GET_MEDIA_DETAILS, lambda call: hass.async_create_task(handle_get_media_details_service(hass, call)), schema=GET_MEDIA_DETAILS_SCHEMA)
 
-    return True
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up Hassarr from a config entry."""
