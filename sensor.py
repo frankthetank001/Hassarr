@@ -61,7 +61,7 @@ async def _async_update_data(hass: HomeAssistant, api: OverseerrAPI) -> Dict[str
     """Update data from Overseerr API."""
     try:
         # Get active requests
-        requests_data = api.get_requests()
+        requests_data = await api.get_requests()
         
         if not requests_data:
             return {

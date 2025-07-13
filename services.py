@@ -1,5 +1,5 @@
 import logging
-import requests
+import aiohttp
 import json
 from urllib.parse import urljoin, urlparse, urlunparse
 from typing import Dict, Any, Optional, List
@@ -22,54 +22,67 @@ class OverseerrAPI:
         if not parsed_url.scheme:
             self.base_url = f"https://{url}"
     
-    def _make_request(self, endpoint: str, method: str = "GET", data: Dict = None) -> Optional[Dict]:
-        """Make HTTP request to Overseerr API."""
+    async def _make_request(self, endpoint: str, method: str = "GET", data: Dict = None) -> Optional[Dict]:
+        """Make async HTTP request to Overseerr API."""
         url = urljoin(self.base_url, endpoint)
         try:
-            if method == "GET":
-                response = requests.get(url, headers=self.headers)
-            elif method == "POST":
-                response = requests.post(url, headers=self.headers, json=data)
-            elif method == "DELETE":
-                response = requests.delete(url, headers=self.headers)
-            else:
-                _LOGGER.error(f"Unsupported HTTP method: {method}")
-                return None
-                
-            if response.status_code in [200, 201, 204]:
-                return response.json() if response.content else {}
-            else:
-                _LOGGER.error(f"API request failed: {response.status_code} - {response.text}")
-                return None
+            async with aiohttp.ClientSession() as session:
+                if method == "GET":
+                    async with session.get(url, headers=self.headers) as response:
+                        if response.status in [200, 201, 204]:
+                            content = await response.text()
+                            return json.loads(content) if content else {}
+                        else:
+                            _LOGGER.error(f"API request failed: {response.status} - {await response.text()}")
+                            return None
+                elif method == "POST":
+                    async with session.post(url, headers=self.headers, json=data) as response:
+                        if response.status in [200, 201, 204]:
+                            content = await response.text()
+                            return json.loads(content) if content else {}
+                        else:
+                            _LOGGER.error(f"API request failed: {response.status} - {await response.text()}")
+                            return None
+                elif method == "DELETE":
+                    async with session.delete(url, headers=self.headers) as response:
+                        if response.status in [200, 201, 204]:
+                            content = await response.text()
+                            return json.loads(content) if content else {}
+                        else:
+                            _LOGGER.error(f"API request failed: {response.status} - {await response.text()}")
+                            return None
+                else:
+                    _LOGGER.error(f"Unsupported HTTP method: {method}")
+                    return None
         except Exception as e:
             _LOGGER.error(f"Request failed: {e}")
             return None
     
-    def search_media(self, query: str) -> Optional[Dict]:
+    async def search_media(self, query: str) -> Optional[Dict]:
         """Search for media in Overseerr."""
         endpoint = f"api/v1/search?query={query}"
-        return self._make_request(endpoint)
+        return await self._make_request(endpoint)
     
-    def get_requests(self) -> Optional[Dict]:
+    async def get_requests(self) -> Optional[Dict]:
         """Get all active requests."""
         endpoint = "api/v1/request"
-        return self._make_request(endpoint)
+        return await self._make_request(endpoint)
     
-    def get_media_details(self, media_type: str, tmdb_id: int) -> Optional[Dict]:
+    async def get_media_details(self, media_type: str, tmdb_id: int) -> Optional[Dict]:
         """Get detailed media information."""
         endpoint = f"api/v1/{media_type}/{tmdb_id}"
-        return self._make_request(endpoint)
+        return await self._make_request(endpoint)
     
-    def delete_media(self, media_id: int) -> bool:
+    async def delete_media(self, media_id: int) -> bool:
         """Delete media from Overseerr."""
         endpoint = f"api/v1/media/{media_id}"
-        result = self._make_request(endpoint, method="DELETE")
+        result = await self._make_request(endpoint, method="DELETE")
         return result is not None
     
-    def create_request(self, payload: Dict) -> Optional[Dict]:
+    async def create_request(self, payload: Dict) -> Optional[Dict]:
         """Create a new media request."""
         endpoint = "api/v1/request"
-        return self._make_request(endpoint, method="POST", data=payload)
+        return await self._make_request(endpoint, method="POST", data=payload)
 
 class LLMResponseBuilder:
     """Build LLM-optimized responses."""
@@ -319,7 +332,7 @@ def handle_add_media(hass: HomeAssistant, call: ServiceCall, media_type: str, se
     else:
         _LOGGER.info(f"No results found for {media_type} '{title}'")
 
-def handle_add_overseerr_media(hass: HomeAssistant, call: ServiceCall, media_type: str) -> None:
+async def handle_add_overseerr_media(hass: HomeAssistant, call: ServiceCall, media_type: str) -> None:
     """Handle the service action to add a media (movie or TV show) using Overseerr."""
     _LOGGER.info(f"Received call data: {call.data}")
     title = call.data.get("title")
@@ -365,7 +378,7 @@ def handle_add_overseerr_media(hass: HomeAssistant, call: ServiceCall, media_typ
                 payload["tvdbId"] = tvdb_id
 
         # Create request
-        request_result = api.create_request(payload)
+        request_result = await api.create_request(payload)
 
         if request_result:
             _LOGGER.info(f"Successfully created request for {media_type} '{title}' in Overseerr")
@@ -375,7 +388,7 @@ def handle_add_overseerr_media(hass: HomeAssistant, call: ServiceCall, media_typ
         _LOGGER.info(f"No results found for {media_type} '{title}'")
 
 # New LLM-focused service handlers
-def handle_check_media_status(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
+async def handle_check_media_status(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
     """Handle checking media status with LLM-optimized response."""
     title = call.data.get("title")
     
@@ -400,7 +413,7 @@ def handle_check_media_status(hass: HomeAssistant, call: ServiceCall) -> Dict[st
     api = OverseerrAPI(url, api_key)
     
     # Search for media
-    search_results = api.search_media(title)
+    search_results = await api.search_media(title)
     if not search_results or not search_results.get("results"):
         return {
             "action": "not_found",
@@ -411,12 +424,12 @@ def handle_check_media_status(hass: HomeAssistant, call: ServiceCall) -> Dict[st
     result = search_results["results"][0]
     
     # Get media details and requests
-    details_data = api.get_media_details(result.get("mediaType", "movie"), result.get("id"))
-    requests_data = api.get_requests()
+    details_data = await api.get_media_details(result.get("mediaType", "movie"), result.get("id"))
+    requests_data = await api.get_requests()
     
     return LLMResponseBuilder.build_status_response(search_results, requests_data, details_data)
 
-def handle_remove_media(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
+async def handle_remove_media(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
     """Handle removing media with LLM-optimized response."""
     media_id = call.data.get("media_id")
     
@@ -439,7 +452,7 @@ def handle_remove_media(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any
         }
     
     api = OverseerrAPI(url, api_key)
-    success = api.delete_media(int(media_id))
+    success = await api.delete_media(int(media_id))
     
     if success:
         return {
@@ -455,7 +468,7 @@ def handle_remove_media(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any
             "message": f"Could not remove media ID {media_id} - check permissions, media status, or if ID exists"
         }
 
-def handle_get_active_requests(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
+async def handle_get_active_requests(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
     """Handle getting active requests with LLM-optimized response."""
     config_data = hass.data[DOMAIN]
     url = config_data.get("overseerr_url")
@@ -469,7 +482,7 @@ def handle_get_active_requests(hass: HomeAssistant, call: ServiceCall) -> Dict[s
         }
     
     api = OverseerrAPI(url, api_key)
-    requests_data = api.get_requests()
+    requests_data = await api.get_requests()
     
     if not requests_data:
         return {
@@ -480,7 +493,7 @@ def handle_get_active_requests(hass: HomeAssistant, call: ServiceCall) -> Dict[s
     
     return LLMResponseBuilder.build_requests_response(requests_data)
 
-def handle_search_media(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
+async def handle_search_media(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
     """Handle searching for media."""
     query = call.data.get("query")
     
@@ -503,7 +516,7 @@ def handle_search_media(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any
         }
     
     api = OverseerrAPI(url, api_key)
-    search_results = api.search_media(query)
+    search_results = await api.search_media(query)
     
     if not search_results or not search_results.get("results"):
         return {
@@ -520,7 +533,7 @@ def handle_search_media(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any
         "message": f"Found {len(search_results['results'])} results for '{query}'"
     }
 
-def handle_get_media_details(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
+async def handle_get_media_details(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
     """Handle getting detailed media information."""
     media_type = call.data.get("media_type")
     tmdb_id = call.data.get("tmdb_id")
@@ -544,7 +557,7 @@ def handle_get_media_details(hass: HomeAssistant, call: ServiceCall) -> Dict[str
         }
     
     api = OverseerrAPI(url, api_key)
-    details = api.get_media_details(media_type, int(tmdb_id))
+    details = await api.get_media_details(media_type, int(tmdb_id))
     
     if not details:
         return {
