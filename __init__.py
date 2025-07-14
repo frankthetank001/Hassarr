@@ -233,6 +233,45 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             hass.data[DOMAIN]["last_add_media"] = result
             return result
 
+    async def handle_search_media_service(call: ServiceCall) -> dict:
+        """Search for media with LLM-optimized response showing multiple results."""
+        try:
+            query = call.data.get("query", "").strip()
+            
+            if not query:
+                result = LLMResponseBuilder.build_search_response("missing_query")
+                hass.data[DOMAIN]["last_search"] = result
+                return result
+            
+            _LOGGER.info(f"Searching for media: {query}")
+            api = hass.data[DOMAIN]["api"]
+            
+            # Search for the media
+            search_data = await api.search_media(query)
+            if not search_data:
+                result = LLMResponseBuilder.build_search_response("connection_error", query, error_details="Failed to get response from Overseerr search API")
+                hass.data[DOMAIN]["last_search"] = result
+                return result
+            
+            # Check if any results found
+            results = search_data.get("results", [])
+            if not results:
+                result = LLMResponseBuilder.build_search_response("no_results", query)
+                hass.data[DOMAIN]["last_search"] = result
+                return result
+            
+            # Return the search results
+            result = LLMResponseBuilder.build_search_response("search_results", query, search_data)
+            hass.data[DOMAIN]["last_search"] = result
+            _LOGGER.info(f"Found {len(results)} results for search: {query}")
+            return result
+            
+        except Exception as e:
+            _LOGGER.error(f"Error searching for media: {e}")
+            result = LLMResponseBuilder.build_search_response("connection_error", query, error_details=str(e))
+            hass.data[DOMAIN]["last_search"] = result
+            return result
+
     # Register the test service
     hass.services.async_register(
         DOMAIN, 
@@ -264,7 +303,18 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         supports_response=True
     )
     
-    _LOGGER.info("Hassarr services registered successfully (test_connection, check_media_status, add_media)")
+    # Register the search media service
+    hass.services.async_register(
+        DOMAIN, 
+        "search_media", 
+        handle_search_media_service, 
+        schema=vol.Schema({
+            vol.Required("query"): str,
+        }),
+        supports_response=True
+    )
+    
+    _LOGGER.info("Hassarr services registered successfully (test_connection, check_media_status, add_media, search_media)")
     return True
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -276,6 +326,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     hass.services.async_remove(DOMAIN, "test_connection")
     hass.services.async_remove(DOMAIN, "check_media_status")
     hass.services.async_remove(DOMAIN, "add_media")
+    hass.services.async_remove(DOMAIN, "search_media")
     
     # Clean up data
     if unload_ok:

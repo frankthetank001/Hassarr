@@ -28,3 +28,14 @@ add_media:
         text:
   response:
     optional: true
+
+search_media:
+  description: "Search for movies and TV shows with LLM-optimized response (returns multiple results for selection)"
+  fields:
+    query:
+      description: "Search query for movies or TV shows (can include titles, actors, genres, etc.)"
+      required: true
+      selector:
+        text:
+  response:
+    optional: true

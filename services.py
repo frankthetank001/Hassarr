@@ -325,3 +325,102 @@ class LLMResponseBuilder:
             "action": "error",
             "message": "Unexpected error occurred"
         }
+    
+    @staticmethod
+    def build_search_response(
+        action: str,
+        query: str = None,
+        search_data: Dict = None,
+        error_details: str = None
+    ) -> Dict:
+        """Build a structured search response for LLM."""
+        
+        if action == "missing_query":
+            return {
+                "action": "missing_query",
+                "error": "No search query provided",
+                "message": "Please provide a search term to look for movies or TV shows"
+            }
+        
+        if action == "connection_error":
+            return {
+                "action": "connection_error",
+                "error": "Failed to connect to Overseerr server",
+                "error_details": error_details,
+                "searched_query": query,
+                "message": "Connection error - check Overseerr configuration and server status",
+                "troubleshooting": [
+                    "Verify Overseerr server is running",
+                    "Check URL and API key configuration",
+                    "Confirm network connectivity",
+                    "Check Home Assistant logs for details"
+                ]
+            }
+        
+        if action == "no_results":
+            return {
+                "action": "no_results",
+                "searched_query": query,
+                "total_results": 0,
+                "message": f"No movies or TV shows found matching '{query}'"
+            }
+        
+        if action == "search_results" and search_data:
+            results = search_data.get("results", [])
+            total_results = search_data.get("totalResults", len(results))
+            
+            # Process each result for LLM consumption
+            processed_results = []
+            for result in results[:10]:  # Limit to first 10 results
+                processed_result = {
+                    "title": result.get("title") or result.get("name", "Unknown"),
+                    "media_type": result.get("mediaType", "unknown"),
+                    "tmdb_id": result.get("id", 0),
+                    "year": LLMResponseBuilder._extract_year(result),
+                    "rating": result.get("voteAverage", 0),
+                    "overview_short": result.get("overview", "")[:200] + "..." if result.get("overview", "") and len(result.get("overview", "")) > 200 else result.get("overview", "No overview available"),
+                    "poster_path": result.get("posterPath"),
+                    "backdrop_path": result.get("backdropPath"),
+                    "popularity": result.get("popularity", 0),
+                    "adult": result.get("adult", False),
+                    "original_language": result.get("originalLanguage", "en"),
+                    "status_in_overseerr": {
+                        "available": result.get("mediaInfo") is not None,
+                        "status": result.get("mediaInfo", {}).get("status") if result.get("mediaInfo") else None,
+                        "status_text": LLMResponseBuilder._get_status_text(result.get("mediaInfo", {}).get("status")) if result.get("mediaInfo") else "Not in library"
+                    }
+                }
+                
+                # Add media-specific info
+                if result.get("mediaType") == "tv":
+                    processed_result["tv_info"] = {
+                        "first_air_date": result.get("firstAirDate"),
+                        "origin_country": result.get("originCountry", [])
+                    }
+                else:
+                    processed_result["movie_info"] = {
+                        "release_date": result.get("releaseDate"),
+                        "original_title": result.get("originalTitle")
+                    }
+                
+                processed_results.append(processed_result)
+            
+            return {
+                "action": "search_results",
+                "searched_query": query,
+                "total_results": total_results,
+                "results_shown": len(processed_results),
+                "results": processed_results,
+                "llm_instructions": "Present the search results to the user in a clear, organized way. Focus on title, year, type, and rating. Mention if any are already in their library. Ask which one they'd like more information about or want to add.",
+                "suggested_followups": [
+                    f"Tell me more about [specific title]",
+                    f"Add [specific title] to my library",
+                    f"What's the status of [specific title]?"
+                ],
+                "message": f"Found {total_results} results for '{query}'. Showing top {len(processed_results)} matches."
+            }
+        
+        return {
+            "action": "error",
+            "message": "Unexpected error occurred in search"
+        }
