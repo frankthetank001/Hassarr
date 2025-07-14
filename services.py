@@ -28,8 +28,10 @@ class OverseerrAPI:
     @staticmethod
     def _encode_query_param(query: str) -> str:
         """Encode query parameters for Overseerr API with aggressive URL encoding."""
+        # Replace colons manually before encoding
+        query = str(query).replace(':', ' ')
         # Overseerr is extremely strict - encode EVERYTHING
-        return quote_plus(str(query))
+        return quote_plus(query)
     
     @staticmethod
     def _encode_path_param(param: str) -> str:
