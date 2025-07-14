@@ -592,26 +592,28 @@ class LLMResponseBuilder:
         if action == "requests_found":
             results = requests_data.get("results", [])
             
-            # Categorize ALL requests by status
-            processing_requests = []    # Status 2: Currently downloading
-            pending_requests = []       # Status 1: Waiting for approval  
-            available_requests = []     # Status 3: Completed/available in library
-            partially_available = []    # Status 4: Partially completed
-            failed_requests = []        # Status 5: Failed/unavailable
-            other_requests = []         # Any other status codes
+            # Categorize ALL requests by status (corrected mapping)
+            pending_requests = []       # Status 2: Pending Approval
+            processing_requests = []    # Status 3: Processing/Downloading  
+            partially_available = []    # Status 4: Partially Available
+            available_requests = []     # Status 5: Available in Library
+            failed_requests = []        # Status 7: Deleted/Failed
+            other_requests = []         # Status 1: Unknown and other codes
             
             for request in results:
                 status = request.get("status", 0)
                 if status == 1:
-                    pending_requests.append(request)
+                    other_requests.append(request)  # Unknown status
                 elif status == 2:
-                    processing_requests.append(request)
+                    pending_requests.append(request)  # Pending Approval
                 elif status == 3:
-                    available_requests.append(request)
+                    processing_requests.append(request)  # Processing/Downloading
                 elif status == 4:
-                    partially_available.append(request)
+                    partially_available.append(request)  # Partially Available
                 elif status == 5:
-                    failed_requests.append(request)
+                    available_requests.append(request)  # Available in Library
+                elif status == 7:
+                    failed_requests.append(request)  # Deleted
                 else:
                     other_requests.append(request)
             
@@ -734,13 +736,14 @@ class LLMResponseBuilder:
         release_date = media.get("releaseDate") or media.get("firstAirDate", "")
         year = release_date[:4] if release_date else "Unknown"
         
-        # Status mapping
+        # Status mapping (corrected)
         status_map = {
-            1: "pending",
-            2: "processing", 
-            3: "available",
+            1: "unknown",
+            2: "pending", 
+            3: "processing",
             4: "partially_available",
-            5: "unavailable"
+            5: "available",
+            7: "unavailable"
         }
         
         status = status_map.get(request.get("status", 1), "unknown")

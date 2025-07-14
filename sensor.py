@@ -184,12 +184,12 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
         top_requester = user_counts.most_common(1)[0] if user_counts else ("No requests", 0)
         
         return {
-            # Request counts by status
+            # Request counts by status (corrected mapping)
             "total_requests": len(requests),
-            "pending_requests": status_counts.get(1, 0),  # 1 = pending
-            "active_downloads": status_counts.get(2, 0),  # 2 = processing/downloading
-            "available_requests": status_counts.get(3, 0),  # 3 = available
-            "failed_requests": status_counts.get(5, 0),  # 5 = unavailable/failed
+            "pending_requests": status_counts.get(2, 0),  # 2 = Pending Approval
+            "active_downloads": status_counts.get(3, 0),  # 3 = Processing/Downloading
+            "available_requests": status_counts.get(5, 0),  # 5 = Available in Library
+            "failed_requests": status_counts.get(7, 0),  # 7 = Deleted
             
             # Request counts by type
             "movie_requests": type_counts.get("movie", 0),
@@ -242,7 +242,7 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
     
     def _calculate_system_health(self, requests: list, jobs: list, status_counts: Counter) -> str:
         """Calculate overall system health status."""
-        failed_requests = status_counts.get(5, 0)
+        failed_requests = status_counts.get(7, 0)  # Status 7 = Deleted/Failed
         total_requests = len(requests)
         running_jobs = len([j for j in jobs if j.get("running", False)])
         
