@@ -3,6 +3,7 @@
 
 import logging
 from datetime import timedelta, datetime
+from collections import Counter
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -134,8 +135,6 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
     
     def _calculate_comprehensive_metrics(self, requests: list, jobs: list) -> dict:
         """Calculate comprehensive metrics from raw API data."""
-        from collections import Counter
-        
         # Initialize counters
         status_counts = Counter()
         type_counts = Counter()
