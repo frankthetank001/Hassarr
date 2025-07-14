@@ -10,6 +10,75 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+class OverseerrStatusMaps:
+    """Centralized status mappings for Overseerr API responses."""
+    
+    # Media Status (mediaInfo.status and mediaInfo.status4k)
+    MEDIA_STATUS = {
+        1: "unknown",
+        2: "pending", 
+        3: "available",
+        4: "partially_available",
+        5: "processing",  # This is the downloading status!
+        7: "failed"
+    }
+    
+    # Request Status (request.status) 
+    REQUEST_STATUS = {
+        1: "pending",
+        2: "approved", 
+        3: "declined",
+        4: "failed"
+    }
+    
+    # Human-readable text for media status
+    MEDIA_STATUS_TEXT = {
+        1: "Unknown",
+        2: "Pending Approval",
+        3: "Available in Library", 
+        4: "Partially Available",
+        5: "Processing/Downloading",  # This is what we want for active downloads
+        7: "Failed/Unavailable"
+    }
+    
+    # Human-readable text for request status
+    REQUEST_STATUS_TEXT = {
+        1: "Pending Approval",
+        2: "Approved",
+        3: "Declined", 
+        4: "Failed"
+    }
+    
+    @staticmethod
+    def get_media_status(status_code: int) -> str:
+        """Get media status string from code."""
+        return OverseerrStatusMaps.MEDIA_STATUS.get(status_code, "unknown")
+    
+    @staticmethod
+    def get_media_status_text(status_code: int) -> str:
+        """Get human-readable media status text from code."""
+        return OverseerrStatusMaps.MEDIA_STATUS_TEXT.get(status_code, f"Status {status_code}")
+    
+    @staticmethod
+    def get_request_status(status_code: int) -> str:
+        """Get request status string from code."""
+        return OverseerrStatusMaps.REQUEST_STATUS.get(status_code, "unknown")
+    
+    @staticmethod
+    def get_request_status_text(status_code: int) -> str:
+        """Get human-readable request status text from code."""
+        return OverseerrStatusMaps.REQUEST_STATUS_TEXT.get(status_code, f"Status {status_code}")
+    
+    @staticmethod
+    def is_actively_processing(media_status: int) -> bool:
+        """Check if media is actively downloading/processing."""
+        return media_status == 5  # PROCESSING status
+    
+    @staticmethod
+    def is_available(media_status: int) -> bool:
+        """Check if media is available in library."""
+        return media_status == 3  # AVAILABLE status
+
 class OverseerrAPI:
     """Simple Overseerr API client."""
     
@@ -309,16 +378,8 @@ class LLMResponseBuilder:
     
     @staticmethod
     def _get_status_text(status_code: int) -> str:
-        """Convert status code to human-readable text."""
-        status_map = {
-            1: "Unknown",
-            2: "Pending Approval", 
-            3: "Processing/Downloading",
-            4: "Partially Available",
-            5: "Available in Library",
-            7: "Deleted"
-        }
-        return status_map.get(status_code, f"Status {status_code}")
+        """Convert media status code to human-readable text."""
+        return OverseerrStatusMaps.get_media_status_text(status_code)
     
     @staticmethod
     def _build_request_details(matching_request: Dict) -> Dict:
@@ -712,28 +773,37 @@ class LLMResponseBuilder:
         if action == "requests_found":
             results = requests_data.get("results", [])
             
-            # Categorize ALL requests by status (corrected mapping)
-            pending_requests = []       # Status 2: Pending Approval
-            processing_requests = []    # Status 3: Processing/Downloading  
-            partially_available = []    # Status 4: Partially Available
-            available_requests = []     # Status 5: Available in Library
-            failed_requests = []        # Status 7: Deleted/Failed
-            other_requests = []         # Status 1: Unknown and other codes
+            # Categorize ALL requests by status (using corrected Overseerr mappings)
+            # Prioritize media status over request status for accuracy
+            pending_requests = []       # Media Status 2: Pending Approval
+            processing_requests = []    # Media Status 5: Processing/Downloading ⭐
+            partially_available = []    # Media Status 4: Partially Available
+            available_requests = []     # Media Status 3: Available in Library
+            failed_requests = []        # Media Status 7: Failed
+            other_requests = []         # Media Status 1: Unknown and other codes
             
             for request in results:
-                status = request.get("status", 0)
+                # Use media status if available, fallback to request status
+                media = request.get("media", {})
+                media_status = media.get("status")
+                if media_status is not None:
+                    status = media_status
+                else:
+                    # If no media status, we can't properly categorize, so treat as other
+                    status = 1
+                
                 if status == 1:
                     other_requests.append(request)  # Unknown status
                 elif status == 2:
                     pending_requests.append(request)  # Pending Approval
                 elif status == 3:
-                    processing_requests.append(request)  # Processing/Downloading
+                    available_requests.append(request)  # Available in Library
                 elif status == 4:
                     partially_available.append(request)  # Partially Available
                 elif status == 5:
-                    available_requests.append(request)  # Available in Library
+                    processing_requests.append(request)  # Processing/Downloading ⭐
                 elif status == 7:
-                    failed_requests.append(request)  # Deleted
+                    failed_requests.append(request)  # Failed
                 else:
                     other_requests.append(request)
             
@@ -879,17 +949,15 @@ class LLMResponseBuilder:
         release_date = media.get("releaseDate") or media.get("firstAirDate", "")
         year = release_date[:4] if release_date else "Unknown"
         
-        # Status mapping (corrected)
-        status_map = {
-            1: "unknown",
-            2: "pending", 
-            3: "processing",
-            4: "partially_available",
-            5: "available",
-            7: "unavailable"
-        }
-        
-        status = status_map.get(request.get("status", 1), "unknown")
+        # Prioritize media status over request status when available
+        # This fixes inconsistency where request might be "pending" but media is "processing"
+        media_status = media.get("status")
+        if media_status is not None:
+            # Use media status (more accurate for download state)
+            status = OverseerrStatusMaps.get_media_status(media_status)
+        else:
+            # Fallback to request status if media status not available
+            status = OverseerrStatusMaps.get_request_status(request.get("status", 1))
         
         # Format creation date
         created_at = request.get("createdAt", "")
