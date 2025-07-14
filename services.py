@@ -4,7 +4,7 @@
 import logging
 import aiohttp
 import json
-from urllib.parse import urljoin, urlparse, quote
+from urllib.parse import urljoin, urlparse, quote, quote_plus
 from typing import Dict, Any, Optional
 from .const import DOMAIN
 
@@ -27,13 +27,11 @@ class OverseerrAPI:
     
     @staticmethod
     def _encode_query_param(query: str) -> str:
-        """Encode query parameters for Overseerr API with special character handling."""
-        # Overseerr has quirks with certain characters - handle them specially
-        # Replace problematic characters before URL encoding to prevent double-encoding issues
-        cleaned_query = query.replace(':', '%3A').replace('&', '%26').replace('#', '%23')
-        
-        # Then URL encode everything else except alphanumeric and the % we just added
-        return quote(cleaned_query, safe='%')
+        """Encode query parameters for Overseerr API with aggressive URL encoding."""
+        # Overseerr is extremely strict about URL encoding
+        # Use quote_plus which encodes spaces as + and is more aggressive than quote
+        # This should encode ALL special characters including : & # ? / = etc.
+        return quote_plus(query)
     
     @staticmethod
     def _encode_path_param(param: str) -> str:
@@ -82,7 +80,8 @@ class OverseerrAPI:
         """Search for media in Overseerr."""
         encoded_query = self._encode_query_param(query)
         endpoint = f"api/v1/search?query={encoded_query}"
-        _LOGGER.debug(f"Search query: '{query}' -> encoded: '{encoded_query}' -> endpoint: '{endpoint}'")
+        full_url = urljoin(self.base_url, endpoint)
+        _LOGGER.info(f"Overseerr search: '{query}' -> encoded: '{encoded_query}' -> full URL: '{full_url}'")
         return await self._make_request(endpoint)
     
     async def get_media_details(self, media_type: str, tmdb_id: int) -> Optional[Dict]:
