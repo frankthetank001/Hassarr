@@ -145,6 +145,94 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             hass.data[DOMAIN]["last_status_check"] = result
             return result
 
+    async def handle_add_media_service(call: ServiceCall) -> dict:
+        """Add media to Overseerr with LLM-optimized response."""
+        try:
+            title = call.data.get("title", "").strip()
+            
+            if not title:
+                result = LLMResponseBuilder.build_add_media_response("missing_title")
+                hass.data[DOMAIN]["last_add_media"] = result
+                return result
+            
+            _LOGGER.info(f"Adding media to Overseerr: {title}")
+            api = hass.data[DOMAIN]["api"]
+            
+            # Search for the media
+            search_data = await api.search_media(title)
+            if not search_data:
+                result = LLMResponseBuilder.build_add_media_response("connection_error", title)
+                hass.data[DOMAIN]["last_add_media"] = result
+                return result
+            
+            # Check if any results found
+            results = search_data.get("results", [])
+            if not results:
+                result = LLMResponseBuilder.build_add_media_response("not_found", title)
+                hass.data[DOMAIN]["last_add_media"] = result
+                return result
+            
+            # Get the first result (most relevant)
+            first_result = results[0]
+            media_type = first_result.get("mediaType", "movie")
+            tmdb_id = first_result.get("id")
+            
+            # Check if already exists in Overseerr
+            if first_result.get("mediaInfo"):
+                # Media already exists, get details and return
+                media_details = None
+                try:
+                    if tmdb_id:
+                        media_details = await api.get_media_details(media_type, tmdb_id)
+                except Exception as e:
+                    _LOGGER.warning(f"Failed to get media details: {e}")
+                
+                result = LLMResponseBuilder.build_add_media_response(
+                    "media_already_exists",
+                    title=title,
+                    search_result=first_result,
+                    media_details=media_details
+                )
+                hass.data[DOMAIN]["last_add_media"] = result
+                _LOGGER.info(f"Media '{title}' already exists in Overseerr")
+                return result
+            
+            # Media doesn't exist, so add it
+            user_id = hass.data[DOMAIN].get("overseerr_user_id")
+            add_result = await api.add_media_request(media_type, tmdb_id, user_id)
+            
+            if add_result:
+                # Successfully added, get details for response
+                media_details = None
+                try:
+                    if tmdb_id:
+                        media_details = await api.get_media_details(media_type, tmdb_id)
+                except Exception as e:
+                    _LOGGER.warning(f"Failed to get media details: {e}")
+                
+                result = LLMResponseBuilder.build_add_media_response(
+                    "media_added_successfully",
+                    title=title,
+                    search_result=first_result,
+                    media_details=media_details,
+                    add_result=add_result
+                )
+                hass.data[DOMAIN]["last_add_media"] = result
+                _LOGGER.info(f"Successfully added '{title}' to Overseerr")
+                return result
+            else:
+                # Failed to add
+                result = LLMResponseBuilder.build_add_media_response("media_add_failed", title)
+                hass.data[DOMAIN]["last_add_media"] = result
+                _LOGGER.error(f"Failed to add '{title}' to Overseerr")
+                return result
+            
+        except Exception as e:
+            _LOGGER.error(f"Error adding media: {e}")
+            result = LLMResponseBuilder.build_add_media_response("connection_error", title)
+            hass.data[DOMAIN]["last_add_media"] = result
+            return result
+
     # Register the test service
     hass.services.async_register(
         DOMAIN, 
@@ -165,7 +253,18 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         supports_response=True
     )
     
-    _LOGGER.info("Hassarr services registered successfully (test_connection, check_media_status)")
+    # Register the add media service
+    hass.services.async_register(
+        DOMAIN, 
+        "add_media", 
+        handle_add_media_service, 
+        schema=vol.Schema({
+            vol.Required("title"): str,
+        }),
+        supports_response=True
+    )
+    
+    _LOGGER.info("Hassarr services registered successfully (test_connection, check_media_status, add_media)")
     return True
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -176,6 +275,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     # Remove services
     hass.services.async_remove(DOMAIN, "test_connection")
     hass.services.async_remove(DOMAIN, "check_media_status")
+    hass.services.async_remove(DOMAIN, "add_media")
     
     # Clean up data
     if unload_ok:

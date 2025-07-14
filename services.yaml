@@ -17,3 +17,14 @@ check_media_status:
         text:
   response:
     optional: true
+
+add_media:
+  description: "Add movie or TV show to Overseerr with LLM-optimized response (auto-detects type)"
+  fields:
+    title:
+      description: "Movie or TV show title to search for and add"
+      required: true
+      selector:
+        text:
+  response:
+    optional: true

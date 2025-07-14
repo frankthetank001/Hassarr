@@ -62,6 +62,17 @@ class OverseerrAPI:
         """Get detailed media information from TMDB."""
         endpoint = f"api/v1/{media_type}/{tmdb_id}"
         return await self._make_request(endpoint)
+    
+    async def add_media_request(self, media_type: str, tmdb_id: int, user_id: int = None) -> Optional[Dict]:
+        """Add a media request to Overseerr."""
+        endpoint = "api/v1/request"
+        data = {
+            "mediaType": media_type,
+            "mediaId": tmdb_id
+        }
+        if user_id:
+            data["userId"] = user_id
+        return await self._make_request(endpoint, method="POST", data=data)
 
 class LLMResponseBuilder:
     """Build structured responses for LLM consumption."""
@@ -192,3 +203,93 @@ class LLMResponseBuilder:
             }
         
         return {}
+    
+    @staticmethod
+    def _extract_year(search_result: Dict) -> str:
+        """Extract year from release date."""
+        release_date = search_result.get("releaseDate") or search_result.get("firstAirDate")
+        if release_date and len(release_date) >= 4:
+            return release_date[:4]
+        return "Unknown"
+    
+    @staticmethod
+    def build_add_media_response(
+        action: str,
+        title: str = None,
+        search_result: Dict = None,
+        media_details: Dict = None,
+        add_result: Dict = None,
+        message: str = None
+    ) -> Dict:
+        """Build a structured add media response for LLM."""
+        
+        if action == "missing_title":
+            return {
+                "action": "missing_title",
+                "error": "No search title provided",
+                "message": "Please provide a movie or TV show title to search for"
+            }
+        
+        if action == "connection_error":
+            return {
+                "action": "connection_error",
+                "error": "Failed to connect to Overseerr server",
+                "searched_title": title,
+                "message": "Connection error - check Overseerr configuration and server status"
+            }
+        
+        if action == "not_found":
+            return {
+                "action": "not_found",
+                "searched_title": title,
+                "message": f"No movies or TV shows found matching '{title}'"
+            }
+        
+        if action == "media_already_exists" and search_result:
+            return {
+                "action": "media_already_exists",
+                "media_type": search_result.get("mediaType", "unknown"),
+                "searched_title": title,
+                "media": {
+                    "title": search_result.get("title") or search_result.get("name", "Unknown"),
+                    "tmdb_id": search_result.get("id", 0),
+                    "status": search_result.get("mediaInfo", {}).get("status") if search_result.get("mediaInfo") else None,
+                    "status_text": LLMResponseBuilder._get_status_text(search_result.get("mediaInfo", {}).get("status")) if search_result.get("mediaInfo") else "Not Requested",
+                    "year": LLMResponseBuilder._extract_year(search_result),
+                    "rating": search_result.get("voteAverage", 0),
+                    "overview_short": media_details.get("overview", "")[:150] + "..." if media_details and len(media_details.get("overview", "")) > 150 else media_details.get("overview", "") if media_details else "",
+                    "genres": [genre["name"] for genre in media_details.get("genres", [])][:2] if media_details else []
+                },
+                "message": f"{search_result.get('mediaType', 'Media').title()} already exists in Overseerr"
+            }
+        
+        if action == "media_added_successfully" and search_result:
+            return {
+                "action": "media_added_successfully",
+                "media_type": search_result.get("mediaType", "unknown"),
+                "searched_title": title,
+                "media": {
+                    "title": search_result.get("title") or search_result.get("name", "Unknown"),
+                    "tmdb_id": search_result.get("id", 0),
+                    "status": 2,  # Newly added items are typically "Pending Approval"
+                    "status_text": "Pending Approval",
+                    "year": LLMResponseBuilder._extract_year(search_result),
+                    "rating": search_result.get("voteAverage", 0),
+                    "overview_short": media_details.get("overview", "")[:150] + "..." if media_details and len(media_details.get("overview", "")) > 150 else media_details.get("overview", "") if media_details else "",
+                    "genres": [genre["name"] for genre in media_details.get("genres", [])][:2] if media_details else []
+                },
+                "message": f"{search_result.get('mediaType', 'Media').title()} successfully added to Overseerr"
+            }
+        
+        if action == "media_add_failed":
+            return {
+                "action": "media_add_failed",
+                "error": "Media could not be added to Overseerr",
+                "searched_title": title,
+                "message": "Media request failed - check Overseerr configuration and permissions"
+            }
+        
+        return {
+            "action": "error",
+            "message": "Unexpected error occurred"
+        }
