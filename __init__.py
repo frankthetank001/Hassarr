@@ -76,6 +76,18 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             hass.data[DOMAIN]["last_test_result"] = result
             return result
 
+    # Register the test service
+    hass.services.async_register(
+        DOMAIN, 
+        "test_connection", 
+        handle_test_connection_service, 
+        schema=vol.Schema({}),
+        supports_response=True
+    )
+    
+    _LOGGER.info("Hassarr test service registered successfully")
+    return True
+
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     # Remove services
