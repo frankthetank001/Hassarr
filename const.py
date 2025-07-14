@@ -22,6 +22,19 @@ SENSOR_QUEUE_STATUS = "queue_status"
 SENSOR_SEARCH_RESULTS = "search_results"
 SENSOR_JOBS_STATUS = "jobs_status"
 
+# New comprehensive sensor suite
+SENSOR_TOTAL_REQUESTS = "total_requests"
+SENSOR_PENDING_REQUESTS = "pending_requests"
+SENSOR_AVAILABLE_REQUESTS = "available_requests"
+SENSOR_RECENT_REQUESTS = "recent_requests"
+SENSOR_FAILED_REQUESTS = "failed_requests"
+SENSOR_MOVIE_REQUESTS = "movie_requests"
+SENSOR_TV_REQUESTS = "tv_requests"
+SENSOR_TOP_REQUESTER = "top_requester"
+SENSOR_SYSTEM_HEALTH = "system_health"
+SENSOR_NEXT_JOB = "next_job"
+SENSOR_API_RESPONSE_TIME = "api_response_time"
+
 # Binary sensors for state tracking
 BINARY_SENSOR_OVERSEERR_ONLINE = "overseerr_online"
 BINARY_SENSOR_DOWNLOADS_ACTIVE = "downloads_active"

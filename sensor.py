@@ -2,7 +2,7 @@
 # Note: Keep this filename comment for navigation and organization
 
 import logging
-from datetime import timedelta
+from datetime import timedelta, datetime
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -13,7 +13,14 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .const import DOMAIN, SENSOR_ACTIVE_DOWNLOADS, SENSOR_QUEUE_STATUS, SENSOR_JOBS_STATUS, UPDATE_INTERVAL
+from .const import (
+    DOMAIN, UPDATE_INTERVAL,
+    SENSOR_ACTIVE_DOWNLOADS, SENSOR_QUEUE_STATUS, SENSOR_JOBS_STATUS,
+    SENSOR_TOTAL_REQUESTS, SENSOR_PENDING_REQUESTS, SENSOR_AVAILABLE_REQUESTS,
+    SENSOR_RECENT_REQUESTS, SENSOR_FAILED_REQUESTS, SENSOR_MOVIE_REQUESTS,
+    SENSOR_TV_REQUESTS, SENSOR_TOP_REQUESTER, SENSOR_SYSTEM_HEALTH,
+    SENSOR_NEXT_JOB, SENSOR_API_RESPONSE_TIME
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,7 +30,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Hassarr sensors from config entry."""
-    _LOGGER.info("Setting up Hassarr sensors")
+    _LOGGER.info("Setting up Hassarr comprehensive sensor suite")
     
     # Get the API client from the main integration
     api = hass.data[DOMAIN]["api"]
@@ -34,11 +41,25 @@ async def async_setup_entry(
     # Fetch initial data
     await coordinator.async_config_entry_first_refresh()
     
-    # Create sensor entities
+    # Create comprehensive sensor entities
     entities = [
+        # Original sensors
         HassarrActiveDownloadsSensor(coordinator),
         HassarrQueueStatusSensor(coordinator),
         HassarrJobsStatusSensor(coordinator),
+        
+        # New comprehensive sensors
+        HassarrTotalRequestsSensor(coordinator),
+        HassarrPendingRequestsSensor(coordinator),
+        HassarrAvailableRequestsSensor(coordinator),
+        HassarrRecentRequestsSensor(coordinator),
+        HassarrFailedRequestsSensor(coordinator),
+        HassarrMovieRequestsSensor(coordinator),
+        HassarrTVRequestsSensor(coordinator),
+        HassarrTopRequesterSensor(coordinator),
+        HassarrSystemHealthSensor(coordinator),
+        HassarrNextJobSensor(coordinator),
+        HassarrApiResponseTimeSensor(coordinator),
     ]
     
     async_add_entities(entities, True)
@@ -60,14 +81,19 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self):
         """Fetch data from Overseerr API."""
+        start_time = datetime.now()
+        
         try:
-            _LOGGER.debug("Fetching data from Overseerr...")
+            _LOGGER.debug("Fetching comprehensive data from Overseerr...")
             
             # Fetch requests data
             requests_data = await self.api.get_requests()
             
             # Fetch jobs data
             jobs_data = await self.api.get_jobs()
+            
+            # Calculate API response time
+            api_response_time = (datetime.now() - start_time).total_seconds()
             
             if requests_data is None:
                 _LOGGER.warning("Failed to fetch requests data from Overseerr")
@@ -77,7 +103,7 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("Failed to fetch jobs data from Overseerr")
                 jobs_data = []
             
-            # If jobs_data is a dict with a list, extract the list
+            # Handle different job data formats
             if isinstance(jobs_data, dict) and "results" in jobs_data:
                 jobs_list = jobs_data["results"]
             elif isinstance(jobs_data, list):
@@ -87,29 +113,154 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
             
             results = requests_data.get("results", [])
             
-            # Count active downloads (status 3 = Processing/Downloading)
-            active_downloads = len([r for r in results if r.get("media", {}).get("status") == 3])
-            
-            # Count running jobs
-            running_jobs = len([j for j in jobs_list if j.get("running", False)])
+            # Calculate comprehensive metrics
+            metrics = self._calculate_comprehensive_metrics(results, jobs_list)
             
             data = {
                 "overseerr_online": True,
-                "total_requests": len(results),
-                "active_downloads": active_downloads,
                 "requests": results,
                 "jobs": jobs_list,
-                "running_jobs": running_jobs,
-                "total_jobs": len(jobs_list),
+                "api_response_time": api_response_time,
                 "last_update": self.hass.loop.time(),
+                **metrics
             }
             
-            _LOGGER.debug(f"Updated data: {active_downloads} active downloads, {len(results)} total requests, {running_jobs}/{len(jobs_list)} jobs running")
+            _LOGGER.debug(f"Updated comprehensive data: {len(results)} requests, {len(jobs_list)} jobs, {api_response_time:.2f}s response time")
             return data
             
         except Exception as err:
             _LOGGER.error(f"Error fetching data: {err}")
             raise UpdateFailed(f"Error communicating with Overseerr: {err}")
+    
+    def _calculate_comprehensive_metrics(self, requests: list, jobs: list) -> dict:
+        """Calculate comprehensive metrics from raw API data."""
+        from collections import Counter
+        
+        # Initialize counters
+        status_counts = Counter()
+        type_counts = Counter()
+        user_counts = Counter()
+        recent_count = 0
+        
+        # Get current time for recent requests calculation
+        now = datetime.now()
+        seven_days_ago = now - timedelta(days=7)
+        
+        # Process each request
+        for request in requests:
+            # Count by status
+            status = request.get("status", 1)
+            status_counts[status] += 1
+            
+            # Count by type
+            req_type = request.get("type", "unknown")
+            type_counts[req_type] += 1
+            
+            # Count by user
+            user = request.get("requestedBy", {}).get("displayName", "Unknown")
+            user_counts[user] += 1
+            
+            # Count recent requests (last 7 days)
+            created_at = request.get("createdAt", "")
+            if created_at:
+                try:
+                    # Parse ISO date string
+                    request_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    if request_date.replace(tzinfo=None) >= seven_days_ago:
+                        recent_count += 1
+                except:
+                    pass  # Skip if date parsing fails
+        
+        # Calculate job metrics
+        running_jobs = len([j for j in jobs if j.get("running", False)])
+        total_jobs = len(jobs)
+        
+        # Find next scheduled job
+        next_job_info = self._find_next_scheduled_job(jobs)
+        
+        # Determine system health
+        system_health = self._calculate_system_health(requests, jobs, status_counts)
+        
+        # Get top requester
+        top_requester = user_counts.most_common(1)[0] if user_counts else ("No requests", 0)
+        
+        return {
+            # Request counts by status
+            "total_requests": len(requests),
+            "pending_requests": status_counts.get(1, 0),  # 1 = pending
+            "active_downloads": status_counts.get(2, 0),  # 2 = processing/downloading
+            "available_requests": status_counts.get(3, 0),  # 3 = available
+            "failed_requests": status_counts.get(5, 0),  # 5 = unavailable/failed
+            
+            # Request counts by type
+            "movie_requests": type_counts.get("movie", 0),
+            "tv_requests": type_counts.get("tv", 0),
+            
+            # Time-based metrics
+            "recent_requests": recent_count,
+            
+            # User metrics
+            "top_requester": top_requester[0],
+            "top_requester_count": top_requester[1],
+            
+            # Job metrics
+            "running_jobs": running_jobs,
+            "total_jobs": total_jobs,
+            "next_job": next_job_info,
+            
+            # System health
+            "system_health": system_health
+        }
+    
+    def _find_next_scheduled_job(self, jobs: list) -> dict:
+        """Find the next scheduled job to run."""
+        next_job = None
+        next_time = None
+        
+        for job in jobs:
+            if not job.get("running", False):  # Skip currently running jobs
+                job_time_str = job.get("nextExecutionTime", "")
+                if job_time_str:
+                    try:
+                        job_time = datetime.fromisoformat(job_time_str.replace('Z', '+00:00'))
+                        if next_time is None or job_time < next_time:
+                            next_time = job_time
+                            next_job = {
+                                "id": job.get("id", "unknown"),
+                                "name": job.get("name", "Unknown Job"),
+                                "next_execution": job_time_str,
+                                "type": job.get("type", "unknown")
+                            }
+                    except:
+                        continue
+        
+        return next_job or {
+            "id": "none",
+            "name": "No scheduled jobs",
+            "next_execution": "unknown",
+            "type": "none"
+        }
+    
+    def _calculate_system_health(self, requests: list, jobs: list, status_counts: Counter) -> str:
+        """Calculate overall system health status."""
+        failed_requests = status_counts.get(5, 0)
+        total_requests = len(requests)
+        running_jobs = len([j for j in jobs if j.get("running", False)])
+        
+        # Calculate health score
+        if total_requests == 0:
+            return "Healthy - No activity"
+        
+        failure_rate = failed_requests / total_requests if total_requests > 0 else 0
+        
+        if failure_rate > 0.2:  # More than 20% failed
+            return "Degraded - High failure rate"
+        elif failure_rate > 0.1:  # More than 10% failed
+            return "Warning - Some failures detected"
+        elif running_jobs > 3:  # Too many jobs running
+            return "Busy - Multiple jobs running"
+        else:
+            return "Healthy - Operating normally"
 
 
 class HassarrActiveDownloadsSensor(CoordinatorEntity, SensorEntity):
@@ -226,4 +377,271 @@ class HassarrJobsStatusSensor(CoordinatorEntity, SensorEntity):
             "last_update": self.coordinator.data.get("last_update"),
             "jobs": job_details,
             "currently_running": running_jobs
+        }
+
+
+class HassarrTotalRequestsSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for total requests count."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr Total Requests"
+        self._attr_unique_id = f"{DOMAIN}_{SENSOR_TOTAL_REQUESTS}"
+        self._attr_icon = "mdi:file-multiple"
+
+    @property
+    def native_value(self) -> int:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("total_requests", 0)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        return {
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
+        }
+
+
+class HassarrPendingRequestsSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for pending requests count."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr Pending Requests"
+        self._attr_unique_id = f"{DOMAIN}_{SENSOR_PENDING_REQUESTS}"
+        self._attr_icon = "mdi:file-clock"
+
+    @property
+    def native_value(self) -> int:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("pending_requests", 0)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        return {
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
+        }
+
+
+class HassarrAvailableRequestsSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for available requests count."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr Available Requests"
+        self._attr_unique_id = f"{DOMAIN}_{SENSOR_AVAILABLE_REQUESTS}"
+        self._attr_icon = "mdi:file-check"
+
+    @property
+    def native_value(self) -> int:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("available_requests", 0)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        return {
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
+        }
+
+
+class HassarrRecentRequestsSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for recent requests count."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr Recent Requests"
+        self._attr_unique_id = f"{DOMAIN}_{SENSOR_RECENT_REQUESTS}"
+        self._attr_icon = "mdi:file-clock"
+
+    @property
+    def native_value(self) -> int:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("recent_requests", 0)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        return {
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
+        }
+
+
+class HassarrFailedRequestsSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for failed requests count."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr Failed Requests"
+        self._attr_unique_id = f"{DOMAIN}_{SENSOR_FAILED_REQUESTS}"
+        self._attr_icon = "mdi:file-alert"
+
+    @property
+    def native_value(self) -> int:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("failed_requests", 0)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        return {
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
+        }
+
+
+class HassarrMovieRequestsSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for movie requests count."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr Movie Requests"
+        self._attr_unique_id = f"{DOMAIN}_{SENSOR_MOVIE_REQUESTS}"
+        self._attr_icon = "mdi:file-movie"
+
+    @property
+    def native_value(self) -> int:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("movie_requests", 0)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        return {
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
+        }
+
+
+class HassarrTVRequestsSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for TV requests count."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr TV Requests"
+        self._attr_unique_id = f"{DOMAIN}_{SENSOR_TV_REQUESTS}"
+        self._attr_icon = "mdi:file-tv"
+
+    @property
+    def native_value(self) -> int:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("tv_requests", 0)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        return {
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
+        }
+
+
+class HassarrTopRequesterSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for top requester."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr Top Requester"
+        self._attr_unique_id = f"{DOMAIN}_{SENSOR_TOP_REQUESTER}"
+        self._attr_icon = "mdi:account-group"
+
+    @property
+    def native_value(self) -> str:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("top_requester", "No requests")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        return {
+            "top_requester_count": self.coordinator.data.get("top_requester_count", 0),
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
+        }
+
+
+class HassarrSystemHealthSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for system health."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr System Health"
+        self._attr_unique_id = f"{DOMAIN}_{SENSOR_SYSTEM_HEALTH}"
+        self._attr_icon = "mdi:health"
+
+    @property
+    def native_value(self) -> str:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("system_health", "Unknown")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        return {
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
+        }
+
+
+class HassarrNextJobSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for next job."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr Next Job"
+        self._attr_unique_id = f"{DOMAIN}_{SENSOR_NEXT_JOB}"
+        self._attr_icon = "mdi:calendar-check"
+
+    @property
+    def native_value(self) -> str:
+        """Return the state of the sensor."""
+        next_job = self.coordinator.data.get("next_job", {})
+        return f"{next_job.get('name', 'No scheduled job')} ({next_job.get('type', 'unknown')})"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        return {
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
+        }
+
+
+class HassarrApiResponseTimeSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for API response time."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr API Response Time"
+        self._attr_unique_id = f"{DOMAIN}_{SENSOR_API_RESPONSE_TIME}"
+        self._attr_icon = "mdi:clock"
+        self._attr_native_unit_of_measurement = "seconds"
+
+    @property
+    def native_value(self) -> float:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("api_response_time", 0.0)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        return {
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
         } 
