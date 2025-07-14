@@ -13,31 +13,32 @@ _LOGGER = logging.getLogger(__name__)
 class OverseerrStatusMaps:
     """Centralized status mappings for Overseerr API responses."""
     
-    # Media Status (mediaInfo.status and mediaInfo.status4k)
+    # Media Status (mediaInfo.status and mediaInfo.status4k) - Based on observed behavior
     MEDIA_STATUS = {
         1: "unknown",
         2: "pending", 
-        3: "available",
+        3: "processing",        # ⭐ OBSERVED: The Godfather downloading
         4: "partially_available",
-        5: "processing",  # This is the downloading status!
+        5: "available",         # ⭐ OBSERVED: Ice Road completed  
         7: "failed"
     }
     
-    # Request Status (request.status) 
+    # Request Status (request.status) - Updated with observed status 5
     REQUEST_STATUS = {
         1: "pending",
         2: "approved", 
         3: "declined",
-        4: "failed"
+        4: "failed",
+        5: "available"          # ⭐ OBSERVED: Ice Road completed
     }
     
     # Human-readable text for media status
     MEDIA_STATUS_TEXT = {
         1: "Unknown",
         2: "Pending Approval",
-        3: "Available in Library", 
+        3: "Processing/Downloading",    # ⭐ CORRECTED: Active downloads
         4: "Partially Available",
-        5: "Processing/Downloading",  # This is what we want for active downloads
+        5: "Available in Library",      # ⭐ CORRECTED: Completed  
         7: "Failed/Unavailable"
     }
     
@@ -46,7 +47,8 @@ class OverseerrStatusMaps:
         1: "Pending Approval",
         2: "Approved",
         3: "Declined", 
-        4: "Failed"
+        4: "Failed",
+        5: "Available"          # ⭐ ADDED: Missing status
     }
     
     @staticmethod
@@ -72,12 +74,12 @@ class OverseerrStatusMaps:
     @staticmethod
     def is_actively_processing(media_status: int) -> bool:
         """Check if media is actively downloading/processing."""
-        return media_status == 5  # PROCESSING status
+        return media_status == 3  # PROCESSING status (corrected)
     
     @staticmethod
     def is_available(media_status: int) -> bool:
         """Check if media is available in library."""
-        return media_status == 3  # AVAILABLE status
+        return media_status == 5  # AVAILABLE status (corrected)
 
 class OverseerrAPI:
     """Simple Overseerr API client."""
@@ -773,12 +775,12 @@ class LLMResponseBuilder:
         if action == "requests_found":
             results = requests_data.get("results", [])
             
-            # Categorize ALL requests by status (using corrected Overseerr mappings)
+            # Categorize ALL requests by status (using corrected observed mappings)
             # Prioritize media status over request status for accuracy
             pending_requests = []       # Media Status 2: Pending Approval
-            processing_requests = []    # Media Status 5: Processing/Downloading ⭐
+            processing_requests = []    # Media Status 3: Processing/Downloading ⭐ CORRECTED
             partially_available = []    # Media Status 4: Partially Available
-            available_requests = []     # Media Status 3: Available in Library
+            available_requests = []     # Media Status 5: Available in Library ⭐ CORRECTED
             failed_requests = []        # Media Status 7: Failed
             other_requests = []         # Media Status 1: Unknown and other codes
             
@@ -797,11 +799,11 @@ class LLMResponseBuilder:
                 elif status == 2:
                     pending_requests.append(request)  # Pending Approval
                 elif status == 3:
-                    available_requests.append(request)  # Available in Library
+                    processing_requests.append(request)  # Processing/Downloading ⭐ CORRECTED
                 elif status == 4:
                     partially_available.append(request)  # Partially Available
                 elif status == 5:
-                    processing_requests.append(request)  # Processing/Downloading ⭐
+                    available_requests.append(request)  # Available in Library ⭐ CORRECTED
                 elif status == 7:
                     failed_requests.append(request)  # Failed
                 else:
