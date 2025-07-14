@@ -39,3 +39,19 @@ search_media:
         text:
   response:
     optional: true
+
+remove_media:
+  description: "Remove media from Overseerr with LLM-optimized response (provide title OR media_id)"
+  fields:
+    title:
+      description: "Movie or TV show title to search for and remove (will find media_id automatically)"
+      required: false
+      selector:
+        text:
+    media_id:
+      description: "Direct media ID to remove (from mediaInfo.id in status checks)"
+      required: false
+      selector:
+        text:
+  response:
+    optional: true

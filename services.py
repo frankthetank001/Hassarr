@@ -73,6 +73,11 @@ class OverseerrAPI:
         if user_id:
             data["userId"] = user_id
         return await self._make_request(endpoint, method="POST", data=data)
+    
+    async def delete_media(self, media_id: int) -> Optional[Dict]:
+        """Delete media from Overseerr by media ID."""
+        endpoint = f"api/v1/media/{media_id}/file"
+        return await self._make_request(endpoint, method="DELETE")
 
 class LLMResponseBuilder:
     """Build structured responses for LLM consumption."""
@@ -423,4 +428,114 @@ class LLMResponseBuilder:
         return {
             "action": "error",
             "message": "Unexpected error occurred in search"
+        }
+    
+    @staticmethod
+    def build_remove_media_response(
+        action: str,
+        title: str = None,
+        media_id: str = None,
+        search_result: Dict = None,
+        error_details: str = None
+    ) -> Dict:
+        """Build a structured remove media response for LLM."""
+        
+        if action == "missing_params":
+            return {
+                "action": "missing_params",
+                "error": "No title or media_id provided",
+                "message": "Please provide either a title to search for or a specific media_id to remove"
+            }
+        
+        if action == "connection_error":
+            return {
+                "action": "connection_error",
+                "error": "Failed to connect to Overseerr server",
+                "error_details": error_details,
+                "searched_title": title,
+                "media_id": media_id,
+                "message": "Connection error - check Overseerr configuration and server status",
+                "troubleshooting": [
+                    "Verify Overseerr server is running",
+                    "Check URL and API key configuration",
+                    "Confirm network connectivity",
+                    "Check Home Assistant logs for details"
+                ]
+            }
+        
+        if action == "media_not_found":
+            return {
+                "action": "media_not_found",
+                "searched_title": title,
+                "message": f"Could not find '{title}' in your Overseerr library to remove"
+            }
+        
+        if action == "not_in_library":
+            return {
+                "action": "not_in_library", 
+                "searched_title": title,
+                "media": {
+                    "title": search_result.get("title") or search_result.get("name", "Unknown"),
+                    "tmdb_id": search_result.get("id", 0),
+                    "year": LLMResponseBuilder._extract_year(search_result),
+                    "rating": search_result.get("voteAverage", 0)
+                } if search_result else None,
+                "message": f"'{title}' is not in your Overseerr library, so it cannot be removed"
+            }
+        
+        if action == "no_media_id":
+            return {
+                "action": "no_media_id",
+                "searched_title": title,
+                "media": {
+                    "title": search_result.get("title") or search_result.get("name", "Unknown"),
+                    "tmdb_id": search_result.get("id", 0),
+                    "year": LLMResponseBuilder._extract_year(search_result),
+                    "status_text": LLMResponseBuilder._get_status_text(search_result.get("mediaInfo", {}).get("status")) if search_result.get("mediaInfo") else "Unknown"
+                } if search_result else None,
+                "message": f"Found '{title}' but couldn't get the media ID needed for removal",
+                "troubleshooting": [
+                    "Try using check_media_status to get more details",
+                    "Media might be in an unusual state",
+                    "Check Overseerr web interface for status"
+                ]
+            }
+        
+        if action == "removal_failed":
+            return {
+                "action": "removal_failed",
+                "media_id": media_id,
+                "searched_title": title,
+                "error": "Failed to remove media from Overseerr",
+                "error_details": error_details,
+                "message": f"Could not remove media ID {media_id} from Overseerr",
+                "troubleshooting": [
+                    "Check if media ID exists and is valid",
+                    "Verify user has permission to delete media",
+                    "Check if media is currently downloading",
+                    "Look at Overseerr server logs for details"
+                ]
+            }
+        
+        if action == "media_removed":
+            return {
+                "action": "media_removed",
+                "media_id": media_id,
+                "searched_title": title,
+                "media": {
+                    "title": search_result.get("title") or search_result.get("name", "Unknown"),
+                    "tmdb_id": search_result.get("id", 0),
+                    "year": LLMResponseBuilder._extract_year(search_result),
+                    "media_type": search_result.get("mediaType", "unknown")
+                } if search_result else None,
+                "message": f"Successfully removed {search_result.get('title') or search_result.get('name', title) if search_result else title} from Overseerr",
+                "next_steps": {
+                    "suggestion": "The media has been removed from your download queue and library.",
+                    "note": "If files were already downloaded, you may need to manually delete them from your media server."
+                }
+            }
+        
+        return {
+            "action": "error",
+            "message": "Unexpected error occurred in remove media operation"
         }

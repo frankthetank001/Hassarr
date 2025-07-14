@@ -272,6 +272,91 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             hass.data[DOMAIN]["last_search"] = result
             return result
 
+    async def handle_remove_media_service(call: ServiceCall) -> dict:
+        """Remove media from Overseerr with LLM-optimized response."""
+        try:
+            title = call.data.get("title", "").strip()
+            media_id = call.data.get("media_id", "").strip()
+            
+            # Validate input parameters
+            if not title and not media_id:
+                result = LLMResponseBuilder.build_remove_media_response("missing_params")
+                hass.data[DOMAIN]["last_remove_media"] = result
+                return result
+            
+            api = hass.data[DOMAIN]["api"]
+            search_result = None
+            
+            # If title provided, search for media_id
+            if title:
+                _LOGGER.info(f"Searching for media to remove: {title}")
+                search_data = await api.search_media(title)
+                if not search_data:
+                    result = LLMResponseBuilder.build_remove_media_response("connection_error", title, error_details="Failed to get response from Overseerr search API")
+                    hass.data[DOMAIN]["last_remove_media"] = result
+                    return result
+                
+                results = search_data.get("results", [])
+                if not results:
+                    result = LLMResponseBuilder.build_remove_media_response("media_not_found", title)
+                    hass.data[DOMAIN]["last_remove_media"] = result
+                    return result
+                
+                # Get the first result
+                search_result = results[0]
+                
+                # Check if it's in the library (has mediaInfo)
+                if not search_result.get("mediaInfo"):
+                    result = LLMResponseBuilder.build_remove_media_response("not_in_library", title, search_result=search_result)
+                    hass.data[DOMAIN]["last_remove_media"] = result
+                    return result
+                
+                # Extract media_id from mediaInfo
+                media_id = search_result.get("mediaInfo", {}).get("id")
+                if not media_id:
+                    result = LLMResponseBuilder.build_remove_media_response("no_media_id", title, search_result=search_result)
+                    hass.data[DOMAIN]["last_remove_media"] = result
+                    return result
+            
+            _LOGGER.info(f"Attempting to remove media ID: {media_id}")
+            
+            # Make the delete request
+            delete_result = await api.delete_media(int(media_id))
+            
+            if delete_result is not None:
+                # Success - deletion worked
+                result = LLMResponseBuilder.build_remove_media_response(
+                    "media_removed",
+                    title=title,
+                    media_id=media_id,
+                    search_result=search_result
+                )
+                hass.data[DOMAIN]["last_remove_media"] = result
+                _LOGGER.info(f"Successfully removed media ID {media_id}")
+                return result
+            else:
+                # Failed to remove
+                result = LLMResponseBuilder.build_remove_media_response(
+                    "removal_failed",
+                    title=title,
+                    media_id=media_id,
+                    error_details="Delete request returned empty result"
+                )
+                hass.data[DOMAIN]["last_remove_media"] = result
+                _LOGGER.error(f"Failed to remove media ID {media_id}")
+                return result
+            
+        except Exception as e:
+            _LOGGER.error(f"Error removing media: {e}")
+            result = LLMResponseBuilder.build_remove_media_response(
+                "connection_error",
+                title=title,
+                media_id=media_id,
+                error_details=str(e)
+            )
+            hass.data[DOMAIN]["last_remove_media"] = result
+            return result
+
     # Register the test service
     hass.services.async_register(
         DOMAIN, 
@@ -314,7 +399,19 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         supports_response=True
     )
     
-    _LOGGER.info("Hassarr services registered successfully (test_connection, check_media_status, add_media, search_media)")
+    # Register the remove media service
+    hass.services.async_register(
+        DOMAIN, 
+        "remove_media", 
+        handle_remove_media_service, 
+        schema=vol.Schema({
+            vol.Optional("title"): str,
+            vol.Optional("media_id"): str,
+        }),
+        supports_response=True
+    )
+    
+    _LOGGER.info("Hassarr services registered successfully (test_connection, check_media_status, add_media, search_media, remove_media)")
     return True
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -327,6 +424,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     hass.services.async_remove(DOMAIN, "check_media_status")
     hass.services.async_remove(DOMAIN, "add_media")
     hass.services.async_remove(DOMAIN, "search_media")
+    hass.services.async_remove(DOMAIN, "remove_media")
     
     # Clean up data
     if unload_ok:
