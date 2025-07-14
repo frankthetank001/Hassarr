@@ -567,10 +567,11 @@ class LLMResponseBuilder:
         }
 
     @staticmethod
-    def build_active_requests_response(
+    async def build_active_requests_response(
         action: str,
         requests_data: Dict = None,
-        error_details: str = None
+        error_details: str = None,
+        api = None
     ) -> Dict:
         """Build LLM-optimized response for active requests."""
         
@@ -628,16 +629,19 @@ class LLMResponseBuilder:
             
             # Add processing requests first (highest priority)
             for request in processing_requests:
-                active_requests.append(LLMResponseBuilder._build_request_info(request))
+                media_details = await LLMResponseBuilder._fetch_media_details_for_request(request, api)
+                active_requests.append(LLMResponseBuilder._build_request_info(request, media_details))
             
             # Add pending requests 
             for request in pending_requests:
                 if len(active_requests) < 10:
-                    active_requests.append(LLMResponseBuilder._build_request_info(request))
+                    media_details = await LLMResponseBuilder._fetch_media_details_for_request(request, api)
+                    active_requests.append(LLMResponseBuilder._build_request_info(request, media_details))
             
             # Add a few resolved/completed requests for context
             for request in available_requests[:3]:  # Show up to 3 recent completed
-                resolved_requests.append(LLMResponseBuilder._build_request_info(request))
+                media_details = await LLMResponseBuilder._fetch_media_details_for_request(request, api)
+                resolved_requests.append(LLMResponseBuilder._build_request_info(request, media_details))
             
             # Count totals
             total_requests = len(results)
@@ -724,13 +728,33 @@ class LLMResponseBuilder:
         }
 
     @staticmethod
-    def _build_request_info(request: Dict) -> Dict:
+    async def _fetch_media_details_for_request(request: Dict, api) -> Dict:
+        """Fetch media details for a request using the TMDB ID."""
+        try:
+            media = request.get("media", {})
+            media_type = media.get("mediaType", "movie")
+            tmdb_id = media.get("tmdbId")
+            
+            if tmdb_id:
+                details = await api.get_media_details(media_type, tmdb_id)
+                return details or {}
+            return {}
+        except Exception:
+            return {}
+    
+    @staticmethod
+    def _build_request_info(request: Dict, media_details: Dict = None) -> Dict:
         """Build formatted request information for LLM consumption."""
         media = request.get("media", {})
         
         # Determine media type and title
         media_type = "movie" if request.get("type") == "movie" else "tv"
-        title = media.get("title") or media.get("name", "Unknown Title")
+        
+        # Get title from media_details if available, otherwise fallback to media object
+        if media_details:
+            title = media_details.get("title") or media_details.get("name", "Unknown Title")
+        else:
+            title = media.get("title") or media.get("name", "Unknown Title")
         
         # Format release date/year
         release_date = media.get("releaseDate") or media.get("firstAirDate", "")
@@ -761,6 +785,16 @@ class LLMResponseBuilder:
         else:
             created_date = "Unknown"
         
+        # Get overview from media_details if available (more accurate)
+        if media_details:
+            overview = media_details.get("overview", "")
+        else:
+            overview = media.get("overview", "")
+        
+        # Truncate overview if too long
+        if len(overview) > 200:
+            overview = overview[:200] + "..."
+        
         return {
             "title": title,
             "year": year,
@@ -771,7 +805,7 @@ class LLMResponseBuilder:
             "request_id": request.get("id", 0),
             "requested_date": created_date,
             "requested_by": request.get("requestedBy", {}).get("displayName", "Unknown User"),
-            "overview": media.get("overview", "")[:200] + "..." if len(media.get("overview", "")) > 200 else media.get("overview", "")
+            "overview": overview
         }
 
     @staticmethod

@@ -424,7 +424,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             requests_data = await api.get_requests()
             
             if requests_data is None:
-                result = LLMResponseBuilder.build_active_requests_response(
+                result = await LLMResponseBuilder.build_active_requests_response(
                     "connection_error",
                     error_details="Failed to retrieve requests from Overseerr API"
                 )
@@ -435,7 +435,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             
             # Check if we have any requests
             if not requests_data.get("results") or len(requests_data.get("results", [])) == 0:
-                result = LLMResponseBuilder.build_active_requests_response(
+                result = await LLMResponseBuilder.build_active_requests_response(
                     "no_requests",
                     requests_data=requests_data
                 )
@@ -445,9 +445,10 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 return result
             
             # We have requests - build the response
-            result = LLMResponseBuilder.build_active_requests_response(
+            result = await LLMResponseBuilder.build_active_requests_response(
                 "requests_found",
-                requests_data=requests_data
+                requests_data=requests_data,
+                api=api
             )
             result["user_context"] = user_context
             hass.data[DOMAIN]["last_active_requests"] = result
@@ -456,7 +457,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             
         except Exception as e:
             _LOGGER.error(f"Error getting active requests: {e}")
-            result = LLMResponseBuilder.build_active_requests_response(
+            result = await LLMResponseBuilder.build_active_requests_response(
                 "connection_error",
                 error_details=str(e)
             )
