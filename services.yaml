@@ -6,3 +6,14 @@ test_connection:
   fields: {}
   response:
     optional: true
+
+check_media_status:
+  description: "Check media status with LLM-optimized structured response"
+  fields:
+    title:
+      description: "Movie or TV show title to search for"
+      required: true
+      selector:
+        text:
+  response:
+    optional: true
