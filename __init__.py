@@ -41,10 +41,31 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     
     _LOGGER.info("Registering basic test service...")
     
+    def _get_user_context(call: ServiceCall) -> dict:
+        """Get user context from service call."""
+        user_context = {
+            "user_id": getattr(call.context, 'user_id', None),
+            "is_admin": False,
+            "username": "Unknown User"
+        }
+        
+        if call.context and call.context.user_id:
+            user = hass.auth.async_get_user(call.context.user_id)
+            if user:
+                user_context.update({
+                    "is_admin": user.is_admin,
+                    "username": user.name or "Unknown User",
+                    "is_active": user.is_active
+                })
+        
+        return user_context
+    
     async def handle_test_connection_service(call: ServiceCall) -> dict:
         """Test the Overseerr connection."""
         try:
-            _LOGGER.info("Testing Overseerr connection...")
+            user_context = _get_user_context(call)
+            _LOGGER.info(f"Testing Overseerr connection... (called by {user_context['username']})")
+            
             api = hass.data[DOMAIN]["api"]
             requests_data = await api.get_requests()
             
@@ -52,14 +73,16 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 result = {
                     "status": "success",
                     "message": f"Connected to Overseerr successfully. Found {len(requests_data.get('results', []))} requests.",
-                    "total_requests": len(requests_data.get('results', []))
+                    "total_requests": len(requests_data.get('results', [])),
+                    "user_context": user_context
                 }
                 _LOGGER.info(f"Connection test successful: {result}")
             else:
                 result = {
                     "status": "failed",
                     "message": "Failed to connect to Overseerr",
-                    "total_requests": 0
+                    "total_requests": 0,
+                    "user_context": user_context
                 }
                 _LOGGER.error(f"Connection test failed: {result}")
                 
@@ -74,7 +97,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             result = {
                 "status": "error",
                 "message": f"Error: {e}",
-                "total_requests": 0
+                "total_requests": 0,
+                "user_context": _get_user_context(call)
             }
             hass.data[DOMAIN]["last_test_result"] = result
             return result
@@ -83,19 +107,22 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         """Check media status with LLM-optimized response."""
         try:
             title = call.data.get("title", "").strip()
+            user_context = _get_user_context(call)
             
             if not title:
                 result = LLMResponseBuilder.build_status_response("missing_title")
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_status_check"] = result
                 return result
             
-            _LOGGER.info(f"Checking media status for: {title}")
+            _LOGGER.info(f"Checking media status for: {title} (called by {user_context['username']})")
             api = hass.data[DOMAIN]["api"]
             
             # Search for the media
             search_data = await api.search_media(title)
             if not search_data:
                 result = LLMResponseBuilder.build_status_response("connection_error", title, error_details="Failed to get response from Overseerr search API")
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_status_check"] = result
                 return result
             
@@ -103,6 +130,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             results = search_data.get("results", [])
             if not results:
                 result = LLMResponseBuilder.build_status_response("not_found", title)
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_status_check"] = result
                 return result
             
@@ -135,6 +163,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 requests_data=requests_data
             )
             
+            result["user_context"] = user_context
             hass.data[DOMAIN]["last_status_check"] = result
             _LOGGER.info(f"Media status check completed for '{title}': {result['action']}")
             return result
@@ -142,6 +171,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         except Exception as e:
             _LOGGER.error(f"Error checking media status: {e}")
             result = LLMResponseBuilder.build_status_response("connection_error", title, error_details=str(e))
+            result["user_context"] = _get_user_context(call)
             hass.data[DOMAIN]["last_status_check"] = result
             return result
 
@@ -149,19 +179,22 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         """Add media to Overseerr with LLM-optimized response."""
         try:
             title = call.data.get("title", "").strip()
+            user_context = _get_user_context(call)
             
             if not title:
                 result = LLMResponseBuilder.build_add_media_response("missing_title")
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_add_media"] = result
                 return result
             
-            _LOGGER.info(f"Adding media to Overseerr: {title}")
+            _LOGGER.info(f"Adding media to Overseerr: {title} (called by {user_context['username']})")
             api = hass.data[DOMAIN]["api"]
             
             # Search for the media
             search_data = await api.search_media(title)
             if not search_data:
                 result = LLMResponseBuilder.build_add_media_response("connection_error", title, error_details="Failed to get response from Overseerr search API")
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_add_media"] = result
                 return result
             
@@ -169,6 +202,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             results = search_data.get("results", [])
             if not results:
                 result = LLMResponseBuilder.build_add_media_response("not_found", title)
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_add_media"] = result
                 return result
             
@@ -193,13 +227,15 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                     search_result=first_result,
                     media_details=media_details
                 )
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_add_media"] = result
                 _LOGGER.info(f"Media '{title}' already exists in Overseerr")
                 return result
             
             # Media doesn't exist, so add it
-            user_id = hass.data[DOMAIN].get("overseerr_user_id")
-            add_result = await api.add_media_request(media_type, tmdb_id, user_id)
+            # Use the configured user_id for requests, but track who actually called it
+            overseerr_user_id = hass.data[DOMAIN].get("overseerr_user_id")
+            add_result = await api.add_media_request(media_type, tmdb_id, overseerr_user_id)
             
             if add_result:
                 # Successfully added, get details for response
@@ -217,12 +253,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                     media_details=media_details,
                     add_result=add_result
                 )
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_add_media"] = result
                 _LOGGER.info(f"Successfully added '{title}' to Overseerr")
                 return result
             else:
                 # Failed to add
                 result = LLMResponseBuilder.build_add_media_response("media_add_failed", title, error_details="API request returned empty result")
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_add_media"] = result
                 _LOGGER.error(f"Failed to add '{title}' to Overseerr")
                 return result
@@ -230,6 +268,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         except Exception as e:
             _LOGGER.error(f"Error adding media: {e}")
             result = LLMResponseBuilder.build_add_media_response("connection_error", title, error_details=str(e))
+            result["user_context"] = _get_user_context(call)
             hass.data[DOMAIN]["last_add_media"] = result
             return result
 
@@ -237,19 +276,22 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         """Search for media with LLM-optimized response showing multiple results."""
         try:
             query = call.data.get("query", "").strip()
+            user_context = _get_user_context(call)
             
             if not query:
                 result = LLMResponseBuilder.build_search_response("missing_query")
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_search"] = result
                 return result
             
-            _LOGGER.info(f"Searching for media: {query}")
+            _LOGGER.info(f"Searching for media: {query} (called by {user_context['username']})")
             api = hass.data[DOMAIN]["api"]
             
             # Search for the media
             search_data = await api.search_media(query)
             if not search_data:
                 result = LLMResponseBuilder.build_search_response("connection_error", query, error_details="Failed to get response from Overseerr search API")
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_search"] = result
                 return result
             
@@ -257,11 +299,13 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             results = search_data.get("results", [])
             if not results:
                 result = LLMResponseBuilder.build_search_response("no_results", query)
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_search"] = result
                 return result
             
             # Return the search results
             result = LLMResponseBuilder.build_search_response("search_results", query, search_data)
+            result["user_context"] = user_context
             hass.data[DOMAIN]["last_search"] = result
             _LOGGER.info(f"Found {len(results)} results for search: {query}")
             return result
@@ -269,6 +313,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         except Exception as e:
             _LOGGER.error(f"Error searching for media: {e}")
             result = LLMResponseBuilder.build_search_response("connection_error", query, error_details=str(e))
+            result["user_context"] = _get_user_context(call)
             hass.data[DOMAIN]["last_search"] = result
             return result
 
@@ -277,28 +322,32 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         try:
             title = call.data.get("title", "").strip()
             media_id = call.data.get("media_id", "").strip()
+            user_context = _get_user_context(call)
             
             # Validate input parameters
             if not title and not media_id:
                 result = LLMResponseBuilder.build_remove_media_response("missing_params")
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_remove_media"] = result
                 return result
             
+            _LOGGER.info(f"Remove media request (called by {user_context['username']}): title='{title}', media_id='{media_id}'")
             api = hass.data[DOMAIN]["api"]
             search_result = None
             
             # If title provided, search for media_id
             if title:
-                _LOGGER.info(f"Searching for media to remove: {title}")
                 search_data = await api.search_media(title)
                 if not search_data:
                     result = LLMResponseBuilder.build_remove_media_response("connection_error", title, error_details="Failed to get response from Overseerr search API")
+                    result["user_context"] = user_context
                     hass.data[DOMAIN]["last_remove_media"] = result
                     return result
                 
                 results = search_data.get("results", [])
                 if not results:
                     result = LLMResponseBuilder.build_remove_media_response("media_not_found", title)
+                    result["user_context"] = user_context
                     hass.data[DOMAIN]["last_remove_media"] = result
                     return result
                 
@@ -308,6 +357,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 # Check if it's in the library (has mediaInfo)
                 if not search_result.get("mediaInfo"):
                     result = LLMResponseBuilder.build_remove_media_response("not_in_library", title, search_result=search_result)
+                    result["user_context"] = user_context
                     hass.data[DOMAIN]["last_remove_media"] = result
                     return result
                 
@@ -315,6 +365,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 media_id = search_result.get("mediaInfo", {}).get("id")
                 if not media_id:
                     result = LLMResponseBuilder.build_remove_media_response("no_media_id", title, search_result=search_result)
+                    result["user_context"] = user_context
                     hass.data[DOMAIN]["last_remove_media"] = result
                     return result
             
@@ -331,6 +382,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                     media_id=media_id,
                     search_result=search_result
                 )
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_remove_media"] = result
                 _LOGGER.info(f"Successfully removed media ID {media_id}")
                 return result
@@ -342,6 +394,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                     media_id=media_id,
                     error_details="Delete request returned empty result"
                 )
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_remove_media"] = result
                 _LOGGER.error(f"Failed to remove media ID {media_id}")
                 return result
@@ -354,12 +407,16 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 media_id=media_id,
                 error_details=str(e)
             )
+            result["user_context"] = _get_user_context(call)
             hass.data[DOMAIN]["last_remove_media"] = result
             return result
 
     async def handle_get_active_requests_service(call: ServiceCall) -> dict:
         """Handle get active requests service call."""
         try:
+            user_context = _get_user_context(call)
+            _LOGGER.info(f"Getting active requests (called by {user_context['username']})")
+            
             # Use the existing API client
             api = hass.data[DOMAIN]["api"]
             
@@ -371,6 +428,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                     "connection_error",
                     error_details="Failed to retrieve requests from Overseerr API"
                 )
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_active_requests"] = result
                 _LOGGER.error("Failed to get active requests - API returned None")
                 return result
@@ -381,6 +439,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                     "no_requests",
                     requests_data=requests_data
                 )
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_active_requests"] = result
                 _LOGGER.info("No active requests found")
                 return result
@@ -390,6 +449,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 "requests_found",
                 requests_data=requests_data
             )
+            result["user_context"] = user_context
             hass.data[DOMAIN]["last_active_requests"] = result
             _LOGGER.info(f"Retrieved {len(requests_data.get('results', []))} requests from Overseerr")
             return result
@@ -400,14 +460,18 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 "connection_error",
                 error_details=str(e)
             )
+            result["user_context"] = _get_user_context(call)
             hass.data[DOMAIN]["last_active_requests"] = result
             return result
 
     async def handle_run_job_service(call: ServiceCall) -> dict:
         """Handle run job service call."""
         job_id = call.data.get("job_id")
+        user_context = _get_user_context(call)
         
         try:
+            _LOGGER.info(f"Running job {job_id} (called by {user_context['username']})")
+            
             # Use the existing API client
             api = hass.data[DOMAIN]["api"]
             
@@ -420,6 +484,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                     job_id=job_id,
                     error_details="Failed to retrieve jobs from Overseerr API"
                 )
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_run_job"] = result
                 _LOGGER.error(f"Failed to get jobs list to validate job_id: {job_id}")
                 return result
@@ -447,6 +512,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                     job_id=job_id,
                     error_details=f"Job '{job_id}' not found in available jobs list"
                 )
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_run_job"] = result
                 _LOGGER.error(f"Job not found: {job_id}")
                 return result
@@ -461,6 +527,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                     job_id=job_id,
                     job_name=job_name
                 )
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_run_job"] = result
                 _LOGGER.info(f"Successfully triggered job: {job_name} ({job_id})")
                 return result
@@ -471,6 +538,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                     job_id=job_id,
                     error_details="Job run request returned empty result"
                 )
+                result["user_context"] = user_context
                 hass.data[DOMAIN]["last_run_job"] = result
                 _LOGGER.error(f"Failed to run job: {job_id}")
                 return result
@@ -482,6 +550,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 job_id=job_id,
                 error_details=str(e)
             )
+            result["user_context"] = _get_user_context(call)
             hass.data[DOMAIN]["last_run_job"] = result
             return result
 

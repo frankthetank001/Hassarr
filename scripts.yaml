@@ -1,0 +1,145 @@
+# File: scripts.yaml  
+# Note: Keep this filename comment for navigation and organization
+# This file exposes Hassarr services as script entities for chat assistant integration
+
+# =============================================================================
+# HASSARR CHAT ASSISTANT SCRIPTS
+# =============================================================================
+# These scripts wrap the Hassarr services to make them available as entities
+# that the chat assistant can execute. Each script calls the corresponding
+# service and returns structured JSON responses for LLM interpretation.
+
+hassarr_check_media_status:
+  alias: "Check Media Status in Overseerr"
+  description: "Check the status of a movie or TV show in Overseerr with detailed information including download progress, who requested it, and content overview."
+  icon: mdi:television-guide
+  mode: single
+  fields:
+    title:
+      name: "Media Title"
+      description: "Movie or TV show title to search for"
+      required: true
+      selector:
+        text:
+      example: "The Dark Knight"
+  sequence:
+    - service: hassarr.check_media_status
+      data:
+        title: "{{ title }}"
+      response_variable: status_result
+    - stop: ""
+      response_variable: status_result
+
+hassarr_search_media:
+  alias: "Search for Media in Overseerr"
+  description: "Search for movies or TV shows and get multiple results with ratings, overviews, and library status."
+  icon: mdi:magnify
+  mode: single
+  fields:
+    query:
+      name: "Search Query"
+      description: "Search term to look for movies or TV shows"
+      required: true
+      selector:
+        text:
+      example: "action movies 2023"
+  sequence:
+    - service: hassarr.search_media
+      data:
+        query: "{{ query }}"
+      response_variable: search_result
+    - stop: ""
+      response_variable: search_result
+
+hassarr_add_media:
+  alias: "Add Media to Overseerr"
+  description: "Add a movie or TV show to Overseerr for download. Auto-detects whether it's a movie or TV show."
+  icon: mdi:plus-circle-multiple
+  mode: single
+  fields:
+    title:
+      name: "Media Title"
+      description: "Movie or TV show title to add to Overseerr"
+      required: true
+      selector:
+        text:
+      example: "Inception"
+  sequence:
+    - service: hassarr.add_media
+      data:
+        title: "{{ title }}"
+      response_variable: add_result
+    - stop: ""
+      response_variable: add_result
+
+hassarr_remove_media:
+  alias: "Remove Media from Overseerr"
+  description: "Remove a movie or TV show from Overseerr by title or media ID. If using title, it will search automatically."
+  icon: mdi:delete
+  mode: single
+  fields:
+    title:
+      name: "Media Title (Optional)"
+      description: "Movie or TV show title to search for and remove"
+      required: false
+      selector:
+        text:
+      example: "The Matrix"
+    media_id:
+      name: "Media ID (Optional)"
+      description: "Direct Overseerr media ID to remove (found in status checks)"
+      required: false
+      selector:
+        text:
+      example: "12345"
+  sequence:
+    - service: hassarr.remove_media
+      data:
+        title: "{{ title | default('') }}"
+        media_id: "{{ media_id | default('') }}"
+      response_variable: remove_result
+    - stop: ""
+      response_variable: remove_result
+
+hassarr_get_active_requests:
+  alias: "Get Active Downloads from Overseerr"
+  description: "Get information about currently active downloads and pending requests, prioritizing items that are actively downloading."
+  icon: mdi:download-multiple
+  mode: single
+  sequence:
+    - service: hassarr.get_active_requests
+      response_variable: requests_result
+    - stop: ""
+      response_variable: requests_result
+
+hassarr_run_job:
+  alias: "Run Overseerr Job"
+  description: "Trigger a specific Overseerr job by its ID. Use the Jobs Status sensor to see available job IDs."
+  icon: mdi:play-circle
+  mode: single
+  fields:
+    job_id:
+      name: "Job ID"
+      description: "The ID of the Overseerr job to run (check Jobs Status sensor for available IDs)"
+      required: true
+      selector:
+        text:
+      example: "plex-sync"
+  sequence:
+    - service: hassarr.run_job
+      data:
+        job_id: "{{ job_id }}"
+      response_variable: job_result
+    - stop: ""
+      response_variable: job_result
+
+hassarr_test_connection:
+  alias: "Test Overseerr Connection"
+  description: "Test the connection to your Overseerr server and get basic system information."
+  icon: mdi:connection
+  mode: single
+  sequence:
+    - service: hassarr.test_connection
+      response_variable: connection_result
+    - stop: ""
+      response_variable: connection_result
