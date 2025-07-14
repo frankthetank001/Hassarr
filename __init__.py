@@ -357,6 +357,59 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             hass.data[DOMAIN]["last_remove_media"] = result
             return result
 
+    async def handle_get_active_requests_service(call: ServiceCall) -> dict:
+        """Handle get active requests service call."""
+        try:
+            # Get the session from hass data
+            session = hass.data[DOMAIN]["session"]
+            
+            # Create API client
+            api = OverseerrAPI(
+                url=config_entry.data["url"],
+                api_key=config_entry.data["api_key"],
+                session=session
+            )
+            
+            # Get all requests
+            requests_data = await api.get_requests()
+            
+            if requests_data is None:
+                result = LLMResponseBuilder.build_active_requests_response(
+                    "connection_error",
+                    error_details="Failed to retrieve requests from Overseerr API"
+                )
+                hass.data[DOMAIN]["last_active_requests"] = result
+                _LOGGER.error("Failed to get active requests - API returned None")
+                return result
+            
+            # Check if we have any requests
+            if not requests_data.get("results") or len(requests_data.get("results", [])) == 0:
+                result = LLMResponseBuilder.build_active_requests_response(
+                    "no_requests",
+                    requests_data=requests_data
+                )
+                hass.data[DOMAIN]["last_active_requests"] = result
+                _LOGGER.info("No active requests found")
+                return result
+            
+            # We have requests - build the response
+            result = LLMResponseBuilder.build_active_requests_response(
+                "requests_found",
+                requests_data=requests_data
+            )
+            hass.data[DOMAIN]["last_active_requests"] = result
+            _LOGGER.info(f"Retrieved {len(requests_data.get('results', []))} requests from Overseerr")
+            return result
+            
+        except Exception as e:
+            _LOGGER.error(f"Error getting active requests: {e}")
+            result = LLMResponseBuilder.build_active_requests_response(
+                "connection_error",
+                error_details=str(e)
+            )
+            hass.data[DOMAIN]["last_active_requests"] = result
+            return result
+
     # Register the test service
     hass.services.async_register(
         DOMAIN, 
@@ -411,7 +464,16 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         supports_response=True
     )
     
-    _LOGGER.info("Hassarr services registered successfully (test_connection, check_media_status, add_media, search_media, remove_media)")
+    # Register the get active requests service
+    hass.services.async_register(
+        DOMAIN, 
+        "get_active_requests", 
+        handle_get_active_requests_service, 
+        schema=vol.Schema({}),
+        supports_response=True
+    )
+    
+    _LOGGER.info("Hassarr services registered successfully (test_connection, check_media_status, add_media, search_media, remove_media, get_active_requests)")
     return True
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -425,6 +487,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     hass.services.async_remove(DOMAIN, "add_media")
     hass.services.async_remove(DOMAIN, "search_media")
     hass.services.async_remove(DOMAIN, "remove_media")
+    hass.services.async_remove(DOMAIN, "get_active_requests")
     
     # Clean up data
     if unload_ok:

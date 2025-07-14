@@ -55,3 +55,9 @@ remove_media:
         text:
   response:
     optional: true
+
+get_active_requests:
+  description: "Get current active requests with LLM-optimized response (focuses on processing requests, ordered by date)"
+  fields: {}
+  response:
+    optional: true

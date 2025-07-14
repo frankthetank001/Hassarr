@@ -539,3 +539,150 @@ class LLMResponseBuilder:
             "action": "error",
             "message": "Unexpected error occurred in remove media operation"
         }
+
+    @staticmethod
+    def build_active_requests_response(
+        action: str,
+        requests_data: Dict = None,
+        error_details: str = None
+    ) -> Dict:
+        """Build LLM-optimized response for active requests."""
+        
+        if action == "connection_error":
+            return {
+                "action": "connection_error",
+                "message": "Could not connect to Overseerr to get active requests",
+                "error_details": error_details,
+                "troubleshooting": [
+                    "Check Overseerr server connectivity",
+                    "Verify API key and URL configuration",
+                    "Ensure Overseerr service is running"
+                ],
+                "next_steps": {
+                    "suggestion": "Try running test_connection service first to verify setup"
+                }
+            }
+        
+        if action == "requests_found":
+            results = requests_data.get("results", [])
+            
+            # Filter for processing requests and sort by date
+            processing_requests = []
+            pending_requests = []
+            
+            for request in results:
+                if request.get("status") == 2:  # 2 = processing/downloading
+                    processing_requests.append(request)
+                elif request.get("status") == 1:  # 1 = pending approval
+                    pending_requests.append(request)
+            
+            # Sort by createdAt date (most recent first)
+            processing_requests.sort(key=lambda x: x.get("createdAt", ""), reverse=True)
+            pending_requests.sort(key=lambda x: x.get("createdAt", ""), reverse=True)
+            
+            # Build response with processing requests prioritized
+            active_requests = []
+            
+            # Add processing requests first
+            for request in processing_requests:
+                active_requests.append(LLMResponseBuilder._build_request_info(request))
+            
+            # Add pending requests (up to total of 10)
+            for request in pending_requests:
+                if len(active_requests) < 10:
+                    active_requests.append(LLMResponseBuilder._build_request_info(request))
+            
+            total_requests = len(results)
+            processing_count = len(processing_requests)
+            pending_count = len(pending_requests)
+            
+            return {
+                "action": "requests_found",
+                "total_requests": total_requests,
+                "processing_count": processing_count, 
+                "pending_count": pending_count,
+                "active_requests": active_requests,
+                "message": f"Found {total_requests} total requests ({processing_count} processing, {pending_count} pending)",
+                "llm_instructions": {
+                    "response_guidance": "Present this as a natural list of what's currently downloading or waiting for approval",
+                    "priority_note": "Processing requests are prioritized and shown first",
+                    "status_meanings": {
+                        "processing": "Currently downloading or being processed",
+                        "pending": "Waiting for approval",
+                        "available": "Ready to download but not started yet"
+                    }
+                },
+                "next_steps": {
+                    "suggestion": "Use check_media_status with a specific title for detailed progress information",
+                    "note": "Processing requests are actively downloading and will complete automatically"
+                }
+            }
+        
+        if action == "no_requests":
+            return {
+                "action": "no_requests",
+                "message": "No active requests found in Overseerr",
+                "total_requests": 0,
+                "processing_count": 0,
+                "pending_count": 0,
+                "active_requests": [],
+                "next_steps": {
+                    "suggestion": "Add media using the add_media service to start new downloads",
+                    "note": "This is good - it means your download queue is clear!"
+                }
+            }
+        
+        return {
+            "action": "error",
+            "message": "Unexpected error occurred in get active requests operation"
+        }
+
+    @staticmethod
+    def _build_request_info(request: Dict) -> Dict:
+        """Build formatted request information for LLM consumption."""
+        media = request.get("media", {})
+        
+        # Determine media type and title
+        media_type = "movie" if request.get("type") == "movie" else "tv"
+        title = media.get("title") or media.get("name", "Unknown Title")
+        
+        # Format release date/year
+        release_date = media.get("releaseDate") or media.get("firstAirDate", "")
+        year = release_date[:4] if release_date else "Unknown"
+        
+        # Status mapping
+        status_map = {
+            1: "pending",
+            2: "processing", 
+            3: "available",
+            4: "partially_available",
+            5: "unavailable"
+        }
+        
+        status = status_map.get(request.get("status", 1), "unknown")
+        
+        # Format creation date
+        created_at = request.get("createdAt", "")
+        if created_at:
+            # Convert ISO date to human readable
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                created_date = dt.strftime("%Y-%m-%d %H:%M")
+            except:
+                created_date = created_at
+        else:
+            created_date = "Unknown"
+        
+        return {
+            "title": title,
+            "year": year,
+            "media_type": media_type,
+            "status": status,
+            "tmdb_id": media.get("tmdbId", 0),
+            "media_id": media.get("id", 0),
+            "request_id": request.get("id", 0),
+            "requested_date": created_date,
+            "requested_by": request.get("requestedBy", {}).get("displayName", "Unknown User"),
+            "overview": media.get("overview", "")[:200] + "..." if len(media.get("overview", "")) > 200 else media.get("overview", "")
+        }
