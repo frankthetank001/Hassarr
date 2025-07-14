@@ -6,6 +6,7 @@ from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
@@ -21,8 +22,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Hassarr binary sensors from a config entry."""
-    # Get coordinator from hass.data
-    coordinator = hass.data.get(DOMAIN, {}).get("coordinator")
+    coordinator = hass.data[DOMAIN].get("coordinator")
     
     if not coordinator:
         _LOGGER.warning("Coordinator not found, skipping binary sensor setup")
@@ -36,20 +36,15 @@ async def async_setup_entry(
     
     async_add_entities(binary_sensors)
 
-class HassarrDownloadsActiveBinarySensor(BinarySensorEntity):
+class HassarrDownloadsActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for active downloads."""
     
     def __init__(self, coordinator):
         """Initialize the binary sensor."""
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self._attr_name = "Downloads Active"
         self._attr_unique_id = f"{DOMAIN}_{BINARY_SENSOR_DOWNLOADS_ACTIVE}"
         self._attr_icon = "mdi:download"
-        
-    @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self.coordinator.last_update_success
         
     @property
     def is_on(self) -> bool:
@@ -67,28 +62,18 @@ class HassarrDownloadsActiveBinarySensor(BinarySensorEntity):
         return {
             "active_downloads": self.coordinator.data.get("active_downloads", 0),
             "total_requests": self.coordinator.data.get("total_requests", 0),
-            "last_update": self.coordinator.data.get("last_update"),
+            "last_update": self.coordinator.last_update_time.isoformat() if self.coordinator.last_update_time else None,
         }
-        
-    async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
-        await super().async_added_to_hass()
-        self.coordinator.async_add_listener(self.async_write_ha_state)
 
-class HassarrOverseerrOnlineBinarySensor(BinarySensorEntity):
+class HassarrOverseerrOnlineBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Binary sensor for Overseerr online status."""
     
     def __init__(self, coordinator):
         """Initialize the binary sensor."""
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self._attr_name = "Overseerr Online"
         self._attr_unique_id = f"{DOMAIN}_{BINARY_SENSOR_OVERSEERR_ONLINE}"
         self._attr_icon = "mdi:server-network"
-        
-    @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self.coordinator.last_update_success
         
     @property
     def is_on(self) -> bool:
@@ -104,11 +89,6 @@ class HassarrOverseerrOnlineBinarySensor(BinarySensorEntity):
             return {}
             
         return {
-            "last_update": self.coordinator.data.get("last_update"),
-            "connection_status": "connected" if self.coordinator.data.get("overseerr_online", False) else "disconnected",
-        }
-        
-    async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
-        await super().async_added_to_hass()
-        self.coordinator.async_add_listener(self.async_write_ha_state) 
+            "last_update": self.coordinator.last_update_time.isoformat() if self.coordinator.last_update_time else None,
+            "connection_status": "connected" if self.is_on else "disconnected",
+        } 

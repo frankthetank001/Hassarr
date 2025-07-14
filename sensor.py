@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -30,72 +30,23 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Hassarr sensors from a config entry."""
-    config_data = config_entry.data
-    
-    # Create API client
-    api = OverseerrAPI(config_data.get("overseerr_url"), config_data.get("overseerr_api_key"))
-    
-    # Create coordinator for regular updates
-    coordinator = DataUpdateCoordinator(
-        hass,
-        _LOGGER,
-        name="hassarr_coordinator",
-        update_method=lambda: _async_update_data(hass, api),
-        update_interval=timedelta(seconds=UPDATE_INTERVAL),
-    )
+    coordinator = hass.data[DOMAIN]["coordinator"]
     
     # Create sensors
     sensors = [
-        HassarrActiveDownloadsSensor(coordinator, api),
-        HassarrQueueStatusSensor(coordinator, api),
-        HassarrOverseerrOnlineSensor(coordinator, api),
+        HassarrActiveDownloadsSensor(coordinator),
+        HassarrQueueStatusSensor(coordinator),
+        HassarrOverseerrOnlineSensor(coordinator),
     ]
     
     async_add_entities(sensors)
-    
-    # Store coordinator in hass.data for use by other components
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN]["coordinator"] = coordinator
-
-async def _async_update_data(hass: HomeAssistant, api: OverseerrAPI) -> Dict[str, Any]:
-    """Update data from Overseerr API."""
-    try:
-        # Get active requests
-        requests_data = await api.get_requests()
-        
-        if not requests_data:
-            return {
-                "active_downloads": 0,
-                "total_requests": 0,
-                "processing_requests": [],
-                "overseerr_online": False,
-                "last_update": dt_util.now().isoformat(),
-            }
-        
-        all_requests = requests_data.get("results", [])
-        processing_requests = [
-            req for req in all_requests 
-            if req.get("media", {}).get("status") == 3 and req.get("media", {}).get("downloadStatus")
-        ]
-        
-        return {
-            "active_downloads": len(processing_requests),
-            "total_requests": len(all_requests),
-            "processing_requests": processing_requests,
-            "overseerr_online": True,
-            "last_update": dt_util.now().isoformat(),
-        }
-    except Exception as err:
-        _LOGGER.error("Error updating Hassarr data: %s", err)
-        raise UpdateFailed(f"Error updating Hassarr data: {err}")
 
 class HassarrActiveDownloadsSensor(SensorEntity):
     """Sensor for active downloads count."""
     
-    def __init__(self, coordinator: DataUpdateCoordinator, api: OverseerrAPI):
+    def __init__(self, coordinator: DataUpdateCoordinator):
         """Initialize the sensor."""
         self.coordinator = coordinator
-        self.api = api
         self._attr_name = "Active Downloads"
         self._attr_unique_id = f"{DOMAIN}_{SENSOR_ACTIVE_DOWNLOADS}"
         self._attr_native_unit_of_measurement = "downloads"
@@ -122,7 +73,7 @@ class HassarrActiveDownloadsSensor(SensorEntity):
         processing_requests = self.coordinator.data.get("processing_requests", [])
         attributes = {
             "total_requests": self.coordinator.data.get("total_requests", 0),
-            "last_update": self.coordinator.data.get("last_update"),
+            "last_update": self.coordinator.last_update_time.isoformat() if self.coordinator.last_update_time else None,
         }
         
         # Add download details
@@ -162,10 +113,9 @@ class HassarrActiveDownloadsSensor(SensorEntity):
 class HassarrQueueStatusSensor(SensorEntity):
     """Sensor for queue status."""
     
-    def __init__(self, coordinator: DataUpdateCoordinator, api: OverseerrAPI):
+    def __init__(self, coordinator: DataUpdateCoordinator):
         """Initialize the sensor."""
         self.coordinator = coordinator
-        self.api = api
         self._attr_name = "Download Queue Status"
         self._attr_unique_id = f"{DOMAIN}_{SENSOR_QUEUE_STATUS}"
         self._attr_icon = "mdi:playlist-play"
@@ -201,16 +151,15 @@ class HassarrQueueStatusSensor(SensorEntity):
             "active_downloads": self.coordinator.data.get("active_downloads", 0),
             "total_requests": self.coordinator.data.get("total_requests", 0),
             "overseerr_online": self.coordinator.data.get("overseerr_online", False),
-            "last_update": self.coordinator.data.get("last_update"),
+            "last_update": self.coordinator.last_update_time.isoformat() if self.coordinator.last_update_time else None,
         }
 
 class HassarrOverseerrOnlineSensor(SensorEntity):
     """Sensor for Overseerr connection status."""
     
-    def __init__(self, coordinator: DataUpdateCoordinator, api: OverseerrAPI):
+    def __init__(self, coordinator: DataUpdateCoordinator):
         """Initialize the sensor."""
         self.coordinator = coordinator
-        self.api = api
         self._attr_name = "Overseerr Online"
         self._attr_unique_id = f"{DOMAIN}_overseerr_online"
         self._attr_icon = "mdi:server-network"
@@ -235,6 +184,6 @@ class HassarrOverseerrOnlineSensor(SensorEntity):
             return {}
             
         return {
-            "last_update": self.coordinator.data.get("last_update"),
+            "last_update": self.coordinator.last_update_time.isoformat() if self.coordinator.last_update_time else None,
             "connection_status": "connected" if self.coordinator.data.get("overseerr_online", False) else "disconnected",
         } 

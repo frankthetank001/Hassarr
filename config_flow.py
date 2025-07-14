@@ -62,8 +62,8 @@ class HassarrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="reconfigure_overseerr",
             data_schema=vol.Schema({
-                vol.Optional("overseerr_url", default=existing_data.get("overseerr_url", "")): str,
-                vol.Optional("overseerr_api_key", default=existing_data.get("overseerr_api_key", "")): str,
+                vol.Optional("overseerr_url", default=existing_data.get("overseerr_url", ""), description={"suggested_value": existing_data.get("overseerr_url", "")}): str,
+                vol.Optional("overseerr_api_key", default=existing_data.get("overseerr_api_key", ""), description={"suggested_value": existing_data.get("overseerr_api_key", "")}): str,
             })
         )
 
@@ -116,10 +116,10 @@ class HassarrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="reconfigure_radarr_sonarr",
             data_schema=vol.Schema({
-                vol.Optional("radarr_url", default=existing_data.get("radarr_url", "")): str,
-                vol.Optional("sonarr_url", default=existing_data.get("sonarr_url", "")): str,
-                vol.Optional("radarr_api_key", default=existing_data.get("radarr_api_key", "")): str,
-                vol.Optional("sonarr_api_key", default=existing_data.get("sonarr_api_key", "")): str,
+                vol.Optional("radarr_url", default=existing_data.get("radarr_url", ""), description={"suggested_value": existing_data.get("radarr_url", "")}): str,
+                vol.Optional("sonarr_url", default=existing_data.get("sonarr_url", ""), description={"suggested_value": existing_data.get("sonarr_url", "")}): str,
+                vol.Optional("radarr_api_key", default=existing_data.get("radarr_api_key", ""), description={"suggested_value": existing_data.get("radarr_api_key", "")}): str,
+                vol.Optional("sonarr_api_key", default=existing_data.get("sonarr_api_key", ""), description={"suggested_value": existing_data.get("sonarr_api_key", "")}): str,
             })
         )
 
@@ -265,15 +265,15 @@ class HassarrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     def _get_radarr_sonarr_schema():
         return vol.Schema({
-            vol.Required("radarr_url"): str,
-            vol.Required("radarr_api_key"): str,
-            vol.Required("sonarr_url"): str,
-            vol.Required("sonarr_api_key"): str,
+            vol.Required("radarr_url", description={"placeholder": "http://192.168.1.100:7878"}): str,
+            vol.Required("radarr_api_key", description={"placeholder": "Your Radarr API Key"}): str,
+            vol.Required("sonarr_url", description={"placeholder": "http://192.168.1.100:8989"}): str,
+            vol.Required("sonarr_api_key", description={"placeholder": "Your Sonarr API Key"}): str,
         })
 
     @staticmethod
     def _get_overseerr_schema():
         return vol.Schema({
-            vol.Required("overseerr_url"): str,
-            vol.Required("overseerr_api_key"): str
+            vol.Required("overseerr_url", description={"placeholder": "http://192.168.1.100:5055"}): str,
+            vol.Required("overseerr_api_key", description={"placeholder": "Your Overseerr API Key"}): str
         })
