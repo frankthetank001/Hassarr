@@ -6,8 +6,6 @@ test_connection:
   fields: {}
   response:
     optional: true
-  example: |
-    service: hassarr.test_connection
 
 check_media_status:
   description: "Check media status with LLM-optimized structured response"
@@ -19,10 +17,8 @@ check_media_status:
         text:
   response:
     optional: true
-  example: |
-    service: hassarr.check_media_status
-    data:
-      title: "The Dark Knight"
+  example:
+    title: "The Dark Knight"
 
 add_media:
   description: "Add movie or TV show to Overseerr with LLM-optimized response (auto-detects type)"
@@ -34,10 +30,8 @@ add_media:
         text:
   response:
     optional: true
-  example: |
-    service: hassarr.add_media
-    data:
-      title: "Inception"
+  example:
+    title: "Inception"
 
 search_media:
   description: "Search for movies and TV shows with LLM-optimized response (returns multiple results for selection)"
@@ -49,10 +43,8 @@ search_media:
         text:
   response:
     optional: true
-  example: |
-    service: hassarr.search_media
-    data:
-      query: "Christopher Nolan movies"
+  example:
+    query: "Christopher Nolan movies"
 
 remove_media:
   description: "Remove media from Overseerr with LLM-optimized response (provide title OR media_id)"
@@ -69,24 +61,14 @@ remove_media:
         text:
   response:
     optional: true
-  example: |
-    # Remove by title (searches automatically)
-    service: hassarr.remove_media
-    data:
-      title: "The Matrix"
-    
-    # Or remove by direct media_id
-    service: hassarr.remove_media
-    data:
-      media_id: "12345"
+  example:
+    title: "The Matrix"
 
 get_active_requests:
   description: "Get current active requests with LLM-optimized response (focuses on processing requests, ordered by date)"
   fields: {}
   response:
     optional: true
-  example: |
-    service: hassarr.get_active_requests
 
 run_job:
   description: "Trigger a specific Overseerr job with LLM-optimized response"
@@ -98,7 +80,5 @@ run_job:
         text:
   response:
     optional: true
-  example: |
-    service: hassarr.run_job
-    data:
-      job_id: "availability-sync"
+  example:
+    job_id: "availability-sync"
