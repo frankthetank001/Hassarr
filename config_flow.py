@@ -1,3 +1,6 @@
+# File: config_flow.py
+# Note: Keep this filename comment for navigation and organization
+
 from urllib.parse import urljoin
 import voluptuous as vol
 from homeassistant import config_entries

@@ -1,3 +1,6 @@
+# File: const.py
+# Note: Keep this filename comment for navigation and organization
+
 DOMAIN = "hassarr"
 
 SERVICE_ADD_RADARR_MOVIE = "add_radarr_movie"

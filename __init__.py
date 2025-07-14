@@ -1,3 +1,6 @@
+# File: __init__.py
+# Note: Keep this filename comment for navigation and organization
+
 import logging
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -35,7 +38,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     
     _LOGGER.info("Registering basic test service...")
     
-    async def handle_test_connection_service(call: ServiceCall) -> None:
+    async def handle_test_connection_service(call: ServiceCall) -> dict:
         """Test the Overseerr connection."""
         try:
             _LOGGER.info("Testing Overseerr connection...")
@@ -60,6 +63,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             # Store result for inspection
             hass.data[DOMAIN]["last_test_result"] = result
             
+            # Return the result for response_variable support
+            return result
+            
         except Exception as e:
             _LOGGER.error(f"Error testing connection: {e}")
             result = {
@@ -68,17 +74,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 "total_requests": 0
             }
             hass.data[DOMAIN]["last_test_result"] = result
-    
-    # Register just one simple test service
-    hass.services.async_register(
-        DOMAIN, 
-        "test_connection", 
-        handle_test_connection_service, 
-        schema=vol.Schema({})
-    )
-    
-    _LOGGER.info("Basic Hassarr setup completed successfully")
-    return True
+            return result
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Unload a config entry."""
