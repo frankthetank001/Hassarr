@@ -95,7 +95,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             # Search for the media
             search_data = await api.search_media(title)
             if not search_data:
-                result = LLMResponseBuilder.build_status_response("connection_error", title)
+                result = LLMResponseBuilder.build_status_response("connection_error", title, error_details="Failed to get response from Overseerr search API")
                 hass.data[DOMAIN]["last_status_check"] = result
                 return result
             
@@ -141,7 +141,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             
         except Exception as e:
             _LOGGER.error(f"Error checking media status: {e}")
-            result = LLMResponseBuilder.build_status_response("connection_error", title)
+            result = LLMResponseBuilder.build_status_response("connection_error", title, error_details=str(e))
             hass.data[DOMAIN]["last_status_check"] = result
             return result
 
@@ -161,7 +161,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             # Search for the media
             search_data = await api.search_media(title)
             if not search_data:
-                result = LLMResponseBuilder.build_add_media_response("connection_error", title)
+                result = LLMResponseBuilder.build_add_media_response("connection_error", title, error_details="Failed to get response from Overseerr search API")
                 hass.data[DOMAIN]["last_add_media"] = result
                 return result
             
@@ -222,14 +222,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 return result
             else:
                 # Failed to add
-                result = LLMResponseBuilder.build_add_media_response("media_add_failed", title)
+                result = LLMResponseBuilder.build_add_media_response("media_add_failed", title, error_details="API request returned empty result")
                 hass.data[DOMAIN]["last_add_media"] = result
                 _LOGGER.error(f"Failed to add '{title}' to Overseerr")
                 return result
             
         except Exception as e:
             _LOGGER.error(f"Error adding media: {e}")
-            result = LLMResponseBuilder.build_add_media_response("connection_error", title)
+            result = LLMResponseBuilder.build_add_media_response("connection_error", title, error_details=str(e))
             hass.data[DOMAIN]["last_add_media"] = result
             return result
 

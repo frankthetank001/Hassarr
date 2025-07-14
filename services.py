@@ -84,7 +84,8 @@ class LLMResponseBuilder:
         search_result: Dict = None,
         media_details: Dict = None,
         requests_data: Dict = None,
-        message: str = None
+        message: str = None,
+        error_details: str = None
     ) -> Dict:
         """Build a structured status check response for LLM."""
         
@@ -99,8 +100,15 @@ class LLMResponseBuilder:
             return {
                 "action": "connection_error",
                 "error": "Failed to connect to Overseerr server",
+                "error_details": error_details,
                 "searched_title": title,
-                "message": "Connection error - check Overseerr configuration and server status"
+                "message": "Connection error - check Overseerr configuration and server status",
+                "troubleshooting": [
+                    "Verify Overseerr server is running",
+                    "Check URL and API key configuration", 
+                    "Confirm network connectivity",
+                    "Check Home Assistant logs for details"
+                ]
             }
         
         if action == "not_found":
@@ -219,7 +227,8 @@ class LLMResponseBuilder:
         search_result: Dict = None,
         media_details: Dict = None,
         add_result: Dict = None,
-        message: str = None
+        message: str = None,
+        error_details: str = None
     ) -> Dict:
         """Build a structured add media response for LLM."""
         
@@ -234,8 +243,15 @@ class LLMResponseBuilder:
             return {
                 "action": "connection_error",
                 "error": "Failed to connect to Overseerr server",
+                "error_details": error_details,
                 "searched_title": title,
-                "message": "Connection error - check Overseerr configuration and server status"
+                "message": "Connection error - check Overseerr configuration and server status",
+                "troubleshooting": [
+                    "Verify Overseerr server is running",
+                    "Check URL and API key configuration", 
+                    "Confirm network connectivity",
+                    "Check Home Assistant logs for details"
+                ]
             }
         
         if action == "not_found":
@@ -258,7 +274,8 @@ class LLMResponseBuilder:
                     "year": LLMResponseBuilder._extract_year(search_result),
                     "rating": search_result.get("voteAverage", 0),
                     "overview_short": media_details.get("overview", "")[:150] + "..." if media_details and len(media_details.get("overview", "")) > 150 else media_details.get("overview", "") if media_details else "",
-                    "genres": [genre["name"] for genre in media_details.get("genres", [])][:2] if media_details else []
+                    "genres": [genre["name"] for genre in media_details.get("genres", [])][:2] if media_details else [],
+                    "watch_url": search_result.get('mediaInfo', {}).get('mediaUrl')
                 },
                 "message": f"{search_result.get('mediaType', 'Media').title()} already exists in Overseerr"
             }
@@ -271,12 +288,20 @@ class LLMResponseBuilder:
                 "media": {
                     "title": search_result.get("title") or search_result.get("name", "Unknown"),
                     "tmdb_id": search_result.get("id", 0),
-                    "status": 2,  # Newly added items are typically "Pending Approval"
-                    "status_text": "Pending Approval",
                     "year": LLMResponseBuilder._extract_year(search_result),
                     "rating": search_result.get("voteAverage", 0),
                     "overview_short": media_details.get("overview", "")[:150] + "..." if media_details and len(media_details.get("overview", "")) > 150 else media_details.get("overview", "") if media_details else "",
                     "genres": [genre["name"] for genre in media_details.get("genres", [])][:2] if media_details else []
+                },
+                "next_steps": {
+                    "suggestion": "Would you like me to check the status of this media request?",
+                    "action_prompt": f"Ask me: 'What's the status of {search_result.get('title') or search_result.get('name', title)}?'",
+                    "typical_workflow": [
+                        "Request submitted to Overseerr",
+                        "Admin approval (if required)",
+                        "Download begins",
+                        "Media available in library"
+                    ]
                 },
                 "message": f"{search_result.get('mediaType', 'Media').title()} successfully added to Overseerr"
             }
@@ -285,8 +310,15 @@ class LLMResponseBuilder:
             return {
                 "action": "media_add_failed",
                 "error": "Media could not be added to Overseerr",
+                "error_details": error_details,
                 "searched_title": title,
-                "message": "Media request failed - check Overseerr configuration and permissions"
+                "message": "Media request failed - check Overseerr configuration and permissions",
+                "troubleshooting": [
+                    "Check if user has permission to make requests",
+                    "Verify media is available on configured indexers",
+                    "Confirm Overseerr quality profiles are set up",
+                    "Check Overseerr logs for specific errors"
+                ]
             }
         
         return {
