@@ -360,15 +360,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     async def handle_get_active_requests_service(call: ServiceCall) -> dict:
         """Handle get active requests service call."""
         try:
-            # Get the session from hass data
-            session = hass.data[DOMAIN]["session"]
-            
-            # Create API client
-            api = OverseerrAPI(
-                url=config_entry.data["url"],
-                api_key=config_entry.data["api_key"],
-                session=session
-            )
+            # Use the existing API client
+            api = hass.data[DOMAIN]["api"]
             
             # Get all requests
             requests_data = await api.get_requests()
@@ -415,15 +408,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         job_id = call.data.get("job_id")
         
         try:
-            # Get the session from hass data
-            session = hass.data[DOMAIN]["session"]
-            
-            # Create API client
-            api = OverseerrAPI(
-                url=config_entry.data["url"],
-                api_key=config_entry.data["api_key"],
-                session=session
-            )
+            # Use the existing API client
+            api = hass.data[DOMAIN]["api"]
             
             # First, get available jobs to validate the job_id and get job name
             jobs_data = await api.get_jobs()
