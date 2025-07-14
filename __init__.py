@@ -121,7 +121,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             # Search for the media
             search_data = await api.search_media(title)
             if not search_data:
-                result = LLMResponseBuilder.build_status_response("connection_error", title, error_details="Failed to get response from Overseerr search API")
+                # Get detailed error from API if available
+                error_details = api.last_error if api.last_error else "Failed to get response from Overseerr search API"
+                result = LLMResponseBuilder.build_status_response("connection_error", title, error_details=error_details)
                 result["user_context"] = user_context
                 hass.data[DOMAIN]["last_status_check"] = result
                 return result
@@ -193,7 +195,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             # Search for the media
             search_data = await api.search_media(title)
             if not search_data:
-                result = LLMResponseBuilder.build_add_media_response("connection_error", title, error_details="Failed to get response from Overseerr search API")
+                # Get detailed error from API if available
+                error_details = api.last_error if api.last_error else "Failed to get response from Overseerr search API"
+                result = LLMResponseBuilder.build_add_media_response("connection_error", title, error_details=error_details)
                 result["user_context"] = user_context
                 hass.data[DOMAIN]["last_add_media"] = result
                 return result
@@ -290,7 +294,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             # Search for the media
             search_data = await api.search_media(query)
             if not search_data:
-                result = LLMResponseBuilder.build_search_response("connection_error", query, error_details="Failed to get response from Overseerr search API")
+                # Get detailed error from API if available
+                error_details = api.last_error if api.last_error else "Failed to get response from Overseerr search API"
+                result = LLMResponseBuilder.build_search_response("connection_error", query, error_details=error_details)
                 result["user_context"] = user_context
                 hass.data[DOMAIN]["last_search"] = result
                 return result
@@ -339,7 +345,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             if title:
                 search_data = await api.search_media(title)
                 if not search_data:
-                    result = LLMResponseBuilder.build_remove_media_response("connection_error", title, error_details="Failed to get response from Overseerr search API")
+                    # Get detailed error from API if available
+                    error_details = api.last_error if api.last_error else "Failed to get response from Overseerr search API"
+                    result = LLMResponseBuilder.build_remove_media_response("connection_error", title, error_details=error_details)
                     result["user_context"] = user_context
                     hass.data[DOMAIN]["last_remove_media"] = result
                     return result

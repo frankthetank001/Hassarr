@@ -18,6 +18,7 @@ class OverseerrAPI:
         self.api_key = api_key
         self.headers = {'X-Api-Key': api_key}
         self.session = session
+        self.last_error = None  # Store last API error for detailed error reporting
         
         # Ensure URL has scheme
         parsed_url = urlparse(url)
@@ -37,14 +38,24 @@ class OverseerrAPI:
                     try:
                         return json.loads(content)
                     except json.JSONDecodeError as json_err:
-                        _LOGGER.error(f"Invalid JSON response from {url}: {json_err}")
+                        error_text = f"Invalid JSON response from {url}: {json_err}"
+                        _LOGGER.error(error_text)
                         _LOGGER.debug(f"Response content: {content[:200]}...")
+                        # Store the error for caller to access
+                        self.last_error = error_text
                         return None
                 else:
-                    _LOGGER.error(f"API request failed: {response.status} - {await response.text()}")
+                    error_text = await response.text()
+                    full_error = f"API request failed: {response.status} - {error_text}"
+                    _LOGGER.error(full_error)
+                    # Store the detailed error for caller to access
+                    self.last_error = error_text
                     return None
         except Exception as e:
-            _LOGGER.error(f"Request failed: {e}")
+            error_text = f"Request failed: {e}"
+            _LOGGER.error(error_text)
+            # Store the error for caller to access
+            self.last_error = error_text
             return None
     
     async def get_requests(self) -> Optional[Dict]:
@@ -54,7 +65,8 @@ class OverseerrAPI:
     
     async def search_media(self, query: str) -> Optional[Dict]:
         """Search for media in Overseerr."""
-        encoded_query = quote_plus(query)
+        # Overseerr is very strict about URL encoding - handle special characters manually
+        encoded_query = quote_plus(query).replace("'", "%27").replace(",", "%2C").replace(":", "%3A").replace("&", "%26")
         endpoint = f"api/v1/search?query={encoded_query}"
         return await self._make_request(endpoint)
     
