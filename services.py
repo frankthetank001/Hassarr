@@ -86,30 +86,36 @@ class OverseerrAPI:
     
     async def get_media_details(self, media_type: str, tmdb_id: int) -> Optional[Dict]:
         """Get detailed media information from TMDB."""
-        endpoint = f"api/v1/{media_type}/{tmdb_id}"
+        # Encode path parameters
+        encoded_media_type = self._encode_path_param(str(media_type))
+        encoded_tmdb_id = self._encode_path_param(str(tmdb_id))
+        endpoint = f"api/v1/{encoded_media_type}/{encoded_tmdb_id}"
         return await self._make_request(endpoint)
     
     async def add_media_request(self, media_type: str, tmdb_id: int, user_id: int = None) -> Optional[Dict]:
         """Add a media request to Overseerr."""
         endpoint = "api/v1/request"
+        # For JSON data, ensure no special characters in string values
         data = {
-            "mediaType": media_type,
-            "mediaId": tmdb_id
+            "mediaType": str(media_type),  # Ensure it's a clean string
+            "mediaId": int(tmdb_id)  # Ensure it's an integer
         }
         if user_id:
-            data["userId"] = user_id
+            data["userId"] = int(user_id)
         return await self._make_request(endpoint, method="POST", data=data)
     
     async def delete_media(self, media_id: int) -> Optional[Dict]:
         """Delete media from Overseerr by media ID."""
+        # Encode path parameter
+        encoded_media_id = self._encode_path_param(str(media_id))
+        
         # First delete the files
-        file_endpoint = f"api/v1/media/{media_id}/file"
+        file_endpoint = f"api/v1/media/{encoded_media_id}/file"
         file_result = await self._make_request(file_endpoint, method="DELETE")
         
-        # Only delete the media record if file deletion was successful
-        # This prevents orphaned files with no tracking record
+        # Delete the media record
         if file_result is not None:
-            media_endpoint = f"api/v1/media/{media_id}"
+            media_endpoint = f"api/v1/media/{encoded_media_id}"
             media_result = await self._make_request(media_endpoint, method="DELETE")
             
             return {
@@ -117,7 +123,6 @@ class OverseerrAPI:
                 "record_deleted": media_result is not None
             }
         
-        # File deletion failed, don't touch the record
         return None
     
     async def get_jobs(self) -> Optional[Dict]:
