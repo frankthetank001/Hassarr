@@ -12,11 +12,12 @@ from homeassistant.util import dt as dt_util
 _LOGGER = logging.getLogger(__name__)
 from .services import (
     OverseerrAPI,
-    handle_check_media_status,
-    handle_remove_media,
     handle_get_active_requests,
-    handle_search_media,
-    handle_get_media_details
+    # Comment out imports for functions we commented out
+    # handle_check_media_status,
+    # handle_remove_media,
+    # handle_search_media,
+    # handle_get_media_details
 )
 from .const import (
     DOMAIN, 
