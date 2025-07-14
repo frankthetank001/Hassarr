@@ -25,6 +25,21 @@ class OverseerrAPI:
         if not parsed_url.scheme:
             self.base_url = f"https://{url}"
     
+    @staticmethod
+    def _encode_query_param(query: str) -> str:
+        """Encode query parameters for Overseerr API with special character handling."""
+        # Overseerr has quirks with certain characters - handle them specially
+        # Replace problematic characters before URL encoding to prevent double-encoding issues
+        cleaned_query = query.replace(':', '%3A').replace('&', '%26').replace('#', '%23')
+        
+        # Then URL encode everything else except alphanumeric and the % we just added
+        return quote(cleaned_query, safe='%')
+    
+    @staticmethod
+    def _encode_path_param(param: str) -> str:
+        """Encode path parameters for Overseerr API."""
+        return quote(param, safe='')
+    
     async def _make_request(self, endpoint: str, method: str = "GET", data: Dict = None) -> Optional[Dict]:
         """Make async HTTP request to Overseerr API."""
         url = urljoin(self.base_url, endpoint)
@@ -65,9 +80,7 @@ class OverseerrAPI:
     
     async def search_media(self, query: str) -> Optional[Dict]:
         """Search for media in Overseerr."""
-        # Overseerr is VERY strict about URL encoding - encode everything except alphanumeric
-        # Use safe='' to encode ALL special characters including spaces, apostrophes, etc.
-        encoded_query = quote(query, safe='')
+        encoded_query = self._encode_query_param(query)
         endpoint = f"api/v1/search?query={encoded_query}"
         _LOGGER.debug(f"Search query: '{query}' -> encoded: '{encoded_query}' -> endpoint: '{endpoint}'")
         return await self._make_request(endpoint)
@@ -115,7 +128,9 @@ class OverseerrAPI:
     
     async def run_job(self, job_id: str) -> Optional[Dict]:
         """Run a specific job by ID."""
-        endpoint = f"api/v1/settings/jobs/{job_id}/run"
+        encoded_job_id = self._encode_path_param(job_id)
+        endpoint = f"api/v1/settings/jobs/{encoded_job_id}/run"
+        _LOGGER.debug(f"Run job: '{job_id}' -> encoded: '{encoded_job_id}' -> endpoint: '{endpoint}'")
         return await self._make_request(endpoint, method="POST")
 
 class LLMResponseBuilder:
@@ -656,7 +671,7 @@ class LLMResponseBuilder:
                 "message": f"Successfully removed {search_result.get('title') or search_result.get('name', title) if search_result else title} from Overseerr",
                 "next_steps": {
                     "suggestion": "The media has been removed from your download queue and library.",
-                    "note": "If files were already downloaded, you may need to manually delete them from your media server."
+                    "note": f"If files were being downloaded at the time of removal, they may need to be manually removed from your media library, link here: {search_result.get('mediaInfo', {}).get('serviceUrl', 'N/A')}"
                 }
             }
         
