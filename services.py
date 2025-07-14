@@ -28,15 +28,14 @@ class OverseerrAPI:
     @staticmethod
     def _encode_query_param(query: str) -> str:
         """Encode query parameters for Overseerr API with aggressive URL encoding."""
-        # Overseerr is extremely strict about URL encoding
-        # Use quote_plus which encodes spaces as + and is more aggressive than quote
-        # This should encode ALL special characters including : & # ? / = etc.
-        return quote_plus(query)
+        # Overseerr is extremely strict - encode EVERYTHING
+        return quote_plus(str(query))
     
     @staticmethod
     def _encode_path_param(param: str) -> str:
         """Encode path parameters for Overseerr API."""
-        return quote(param, safe='')
+        # Encode all characters except alphanumeric
+        return quote(str(param), safe='')
     
     async def _make_request(self, endpoint: str, method: str = "GET", data: Dict = None) -> Optional[Dict]:
         """Make async HTTP request to Overseerr API."""
