@@ -4,7 +4,7 @@
 import logging
 import aiohttp
 import json
-from urllib.parse import urljoin, urlparse, quote_plus
+from urllib.parse import urljoin, urlparse, quote
 from typing import Dict, Any, Optional
 from .const import DOMAIN
 
@@ -65,9 +65,11 @@ class OverseerrAPI:
     
     async def search_media(self, query: str) -> Optional[Dict]:
         """Search for media in Overseerr."""
-        # Overseerr is very strict about URL encoding - handle special characters manually
-        encoded_query = quote_plus(query).replace("'", "%27").replace(",", "%2C").replace(":", "%3A").replace("&", "%26")
+        # Overseerr is VERY strict about URL encoding - encode everything except alphanumeric
+        # Use safe='' to encode ALL special characters including spaces, apostrophes, etc.
+        encoded_query = quote(query, safe='')
         endpoint = f"api/v1/search?query={encoded_query}"
+        _LOGGER.debug(f"Search query: '{query}' -> encoded: '{encoded_query}' -> endpoint: '{endpoint}'")
         return await self._make_request(endpoint)
     
     async def get_media_details(self, media_type: str, tmdb_id: int) -> Optional[Dict]:
