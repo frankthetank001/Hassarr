@@ -41,7 +41,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     
     _LOGGER.info("Registering basic test service...")
     
-    def _get_user_context(call: ServiceCall) -> dict:
+    async def _get_user_context(call: ServiceCall) -> dict:
         """Get user context from service call."""
         user_context = {
             "user_id": getattr(call.context, 'user_id', None),
@@ -50,7 +50,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         }
         
         if call.context and call.context.user_id:
-            user = hass.auth.async_get_user(call.context.user_id)
+            user = await hass.auth.async_get_user(call.context.user_id)
             if user:
                 user_context.update({
                     "is_admin": user.is_admin,
@@ -63,7 +63,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     async def handle_test_connection_service(call: ServiceCall) -> dict:
         """Test the Overseerr connection."""
         try:
-            user_context = _get_user_context(call)
+            user_context = await _get_user_context(call)
             _LOGGER.info(f"Testing Overseerr connection... (called by {user_context['username']})")
             
             api = hass.data[DOMAIN]["api"]
@@ -98,7 +98,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 "status": "error",
                 "message": f"Error: {e}",
                 "total_requests": 0,
-                "user_context": _get_user_context(call)
+                "user_context": await _get_user_context(call)
             }
             hass.data[DOMAIN]["last_test_result"] = result
             return result
@@ -107,7 +107,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         """Check media status with LLM-optimized response."""
         try:
             title = call.data.get("title", "").strip()
-            user_context = _get_user_context(call)
+            user_context = await _get_user_context(call)
             
             if not title:
                 result = LLMResponseBuilder.build_status_response("missing_title")
@@ -171,7 +171,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         except Exception as e:
             _LOGGER.error(f"Error checking media status: {e}")
             result = LLMResponseBuilder.build_status_response("connection_error", title, error_details=str(e))
-            result["user_context"] = _get_user_context(call)
+            result["user_context"] = await _get_user_context(call)
             hass.data[DOMAIN]["last_status_check"] = result
             return result
 
@@ -179,7 +179,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         """Add media to Overseerr with LLM-optimized response."""
         try:
             title = call.data.get("title", "").strip()
-            user_context = _get_user_context(call)
+            user_context = await _get_user_context(call)
             
             if not title:
                 result = LLMResponseBuilder.build_add_media_response("missing_title")
@@ -268,7 +268,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         except Exception as e:
             _LOGGER.error(f"Error adding media: {e}")
             result = LLMResponseBuilder.build_add_media_response("connection_error", title, error_details=str(e))
-            result["user_context"] = _get_user_context(call)
+            result["user_context"] = await _get_user_context(call)
             hass.data[DOMAIN]["last_add_media"] = result
             return result
 
@@ -276,7 +276,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         """Search for media with LLM-optimized response showing multiple results."""
         try:
             query = call.data.get("query", "").strip()
-            user_context = _get_user_context(call)
+            user_context = await _get_user_context(call)
             
             if not query:
                 result = LLMResponseBuilder.build_search_response("missing_query")
@@ -313,7 +313,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         except Exception as e:
             _LOGGER.error(f"Error searching for media: {e}")
             result = LLMResponseBuilder.build_search_response("connection_error", query, error_details=str(e))
-            result["user_context"] = _get_user_context(call)
+            result["user_context"] = await _get_user_context(call)
             hass.data[DOMAIN]["last_search"] = result
             return result
 
@@ -322,7 +322,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         try:
             title = call.data.get("title", "").strip()
             media_id = call.data.get("media_id", "").strip()
-            user_context = _get_user_context(call)
+            user_context = await _get_user_context(call)
             
             # Validate input parameters
             if not title and not media_id:
@@ -407,14 +407,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 media_id=media_id,
                 error_details=str(e)
             )
-            result["user_context"] = _get_user_context(call)
+            result["user_context"] = await _get_user_context(call)
             hass.data[DOMAIN]["last_remove_media"] = result
             return result
 
     async def handle_get_active_requests_service(call: ServiceCall) -> dict:
         """Handle get active requests service call."""
         try:
-            user_context = _get_user_context(call)
+            user_context = await _get_user_context(call)
             _LOGGER.info(f"Getting active requests (called by {user_context['username']})")
             
             # Use the existing API client
@@ -460,14 +460,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 "connection_error",
                 error_details=str(e)
             )
-            result["user_context"] = _get_user_context(call)
+            result["user_context"] = await _get_user_context(call)
             hass.data[DOMAIN]["last_active_requests"] = result
             return result
 
     async def handle_run_job_service(call: ServiceCall) -> dict:
         """Handle run job service call."""
         job_id = call.data.get("job_id")
-        user_context = _get_user_context(call)
+        user_context = await _get_user_context(call)
         
         try:
             _LOGGER.info(f"Running job {job_id} (called by {user_context['username']})")
@@ -550,7 +550,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 job_id=job_id,
                 error_details=str(e)
             )
-            result["user_context"] = _get_user_context(call)
+            result["user_context"] = await _get_user_context(call)
             hass.data[DOMAIN]["last_run_job"] = result
             return result
 
