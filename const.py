@@ -20,6 +20,7 @@ SENSOR_ACTIVE_DOWNLOADS = "active_downloads"
 SENSOR_MEDIA_STATUS = "media_status"
 SENSOR_QUEUE_STATUS = "queue_status"
 SENSOR_SEARCH_RESULTS = "search_results"
+SENSOR_JOBS_STATUS = "jobs_status"
 
 # Binary sensors for state tracking
 BINARY_SENSOR_OVERSEERR_ONLINE = "overseerr_online"

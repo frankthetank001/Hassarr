@@ -76,8 +76,33 @@ class OverseerrAPI:
     
     async def delete_media(self, media_id: int) -> Optional[Dict]:
         """Delete media from Overseerr by media ID."""
-        endpoint = f"api/v1/media/{media_id}/file"
-        return await self._make_request(endpoint, method="DELETE")
+        # First delete the files
+        file_endpoint = f"api/v1/media/{media_id}/file"
+        file_result = await self._make_request(file_endpoint, method="DELETE")
+        
+        # Only delete the media record if file deletion was successful
+        # This prevents orphaned files with no tracking record
+        if file_result is not None:
+            media_endpoint = f"api/v1/media/{media_id}"
+            media_result = await self._make_request(media_endpoint, method="DELETE")
+            
+            return {
+                "file_deleted": True, 
+                "record_deleted": media_result is not None
+            }
+        
+        # File deletion failed, don't touch the record
+        return None
+    
+    async def get_jobs(self) -> Optional[Dict]:
+        """Get all available jobs from Overseerr."""
+        endpoint = "api/v1/settings/jobs"
+        return await self._make_request(endpoint)
+    
+    async def run_job(self, job_id: str) -> Optional[Dict]:
+        """Run a specific job by ID."""
+        endpoint = f"api/v1/settings/jobs/{job_id}/run"
+        return await self._make_request(endpoint, method="POST")
 
 class LLMResponseBuilder:
     """Build structured responses for LLM consumption."""
@@ -173,7 +198,8 @@ class LLMResponseBuilder:
             2: "Pending Approval", 
             3: "Processing/Downloading",
             4: "Partially Available",
-            5: "Available in Library"
+            5: "Available in Library",
+            7: "Deleted"
         }
         return status_map.get(status_code, f"Status {status_code}")
     
@@ -685,4 +711,78 @@ class LLMResponseBuilder:
             "requested_date": created_date,
             "requested_by": request.get("requestedBy", {}).get("displayName", "Unknown User"),
             "overview": media.get("overview", "")[:200] + "..." if len(media.get("overview", "")) > 200 else media.get("overview", "")
+        }
+
+    @staticmethod
+    def build_run_job_response(
+        action: str,
+        job_id: str = None,
+        job_name: str = None,
+        error_details: str = None
+    ) -> Dict:
+        """Build LLM-optimized response for running jobs."""
+        
+        if action == "connection_error":
+            return {
+                "action": "connection_error",
+                "job_id": job_id,
+                "message": "Could not connect to Overseerr to run job",
+                "error_details": error_details,
+                "troubleshooting": [
+                    "Check Overseerr server connectivity",
+                    "Verify API key and URL configuration",
+                    "Ensure Overseerr service is running"
+                ],
+                "next_steps": {
+                    "suggestion": "Try running test_connection service first to verify setup"
+                }
+            }
+        
+        if action == "job_not_found":
+            return {
+                "action": "job_not_found",
+                "job_id": job_id,
+                "message": f"Job '{job_id}' not found in Overseerr",
+                "error_details": error_details,
+                "troubleshooting": [
+                    "Check if the job ID is spelled correctly",
+                    "Use the get_active_requests service to see available jobs",
+                    "Verify the job exists in Overseerr settings"
+                ],
+                "next_steps": {
+                    "suggestion": "Check the Jobs Status sensor for available job IDs"
+                }
+            }
+        
+        if action == "job_started":
+            return {
+                "action": "job_started",
+                "job_id": job_id,
+                "job_name": job_name,
+                "message": f"Successfully triggered job: {job_name or job_id}",
+                "next_steps": {
+                    "suggestion": "Monitor the Jobs Status sensor to see when the job completes",
+                    "note": "The job is now running in the background on your Overseerr server"
+                }
+            }
+        
+        if action == "job_run_failed":
+            return {
+                "action": "job_run_failed",
+                "job_id": job_id,
+                "message": f"Failed to run job '{job_id}'",
+                "error_details": error_details,
+                "troubleshooting": [
+                    "Job may already be running",
+                    "Check Overseerr server logs for details",
+                    "Verify user permissions for running jobs"
+                ],
+                "next_steps": {
+                    "suggestion": "Wait a moment and check the Jobs Status sensor to see if the job is running"
+                }
+            }
+        
+        return {
+            "action": "error",
+            "message": "Unexpected error occurred in run job operation"
         }

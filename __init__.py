@@ -410,6 +410,95 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             hass.data[DOMAIN]["last_active_requests"] = result
             return result
 
+    async def handle_run_job_service(call: ServiceCall) -> dict:
+        """Handle run job service call."""
+        job_id = call.data.get("job_id")
+        
+        try:
+            # Get the session from hass data
+            session = hass.data[DOMAIN]["session"]
+            
+            # Create API client
+            api = OverseerrAPI(
+                url=config_entry.data["url"],
+                api_key=config_entry.data["api_key"],
+                session=session
+            )
+            
+            # First, get available jobs to validate the job_id and get job name
+            jobs_data = await api.get_jobs()
+            
+            if jobs_data is None:
+                result = LLMResponseBuilder.build_run_job_response(
+                    "connection_error",
+                    job_id=job_id,
+                    error_details="Failed to retrieve jobs from Overseerr API"
+                )
+                hass.data[DOMAIN]["last_run_job"] = result
+                _LOGGER.error(f"Failed to get jobs list to validate job_id: {job_id}")
+                return result
+            
+            # Handle different response formats
+            if isinstance(jobs_data, dict) and "results" in jobs_data:
+                jobs_list = jobs_data["results"]
+            elif isinstance(jobs_data, list):
+                jobs_list = jobs_data
+            else:
+                jobs_list = []
+            
+            # Find the job to get its name
+            job_name = None
+            job_found = False
+            for job in jobs_list:
+                if job.get("id") == job_id:
+                    job_name = job.get("name", job_id)
+                    job_found = True
+                    break
+            
+            if not job_found:
+                result = LLMResponseBuilder.build_run_job_response(
+                    "job_not_found",
+                    job_id=job_id,
+                    error_details=f"Job '{job_id}' not found in available jobs list"
+                )
+                hass.data[DOMAIN]["last_run_job"] = result
+                _LOGGER.error(f"Job not found: {job_id}")
+                return result
+            
+            # Run the job
+            run_result = await api.run_job(job_id)
+            
+            if run_result is not None:
+                # Success - job was triggered
+                result = LLMResponseBuilder.build_run_job_response(
+                    "job_started",
+                    job_id=job_id,
+                    job_name=job_name
+                )
+                hass.data[DOMAIN]["last_run_job"] = result
+                _LOGGER.info(f"Successfully triggered job: {job_name} ({job_id})")
+                return result
+            else:
+                # Failed to run job
+                result = LLMResponseBuilder.build_run_job_response(
+                    "job_run_failed",
+                    job_id=job_id,
+                    error_details="Job run request returned empty result"
+                )
+                hass.data[DOMAIN]["last_run_job"] = result
+                _LOGGER.error(f"Failed to run job: {job_id}")
+                return result
+            
+        except Exception as e:
+            _LOGGER.error(f"Error running job {job_id}: {e}")
+            result = LLMResponseBuilder.build_run_job_response(
+                "connection_error",
+                job_id=job_id,
+                error_details=str(e)
+            )
+            hass.data[DOMAIN]["last_run_job"] = result
+            return result
+
     # Register the test service
     hass.services.async_register(
         DOMAIN, 
@@ -473,7 +562,18 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         supports_response=True
     )
     
-    _LOGGER.info("Hassarr services registered successfully (test_connection, check_media_status, add_media, search_media, remove_media, get_active_requests)")
+    # Register the run job service
+    hass.services.async_register(
+        DOMAIN, 
+        "run_job", 
+        handle_run_job_service, 
+        schema=vol.Schema({
+            vol.Required("job_id"): str,
+        }),
+        supports_response=True
+    )
+    
+    _LOGGER.info("Hassarr services registered successfully (test_connection, check_media_status, add_media, search_media, remove_media, get_active_requests, run_job)")
     return True
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -488,6 +588,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     hass.services.async_remove(DOMAIN, "search_media")
     hass.services.async_remove(DOMAIN, "remove_media")
     hass.services.async_remove(DOMAIN, "get_active_requests")
+    hass.services.async_remove(DOMAIN, "run_job")
     
     # Clean up data
     if unload_ok:
