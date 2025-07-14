@@ -78,3 +78,9 @@ run_job:
         text:
   response:
     optional: true
+
+get_resolved_requests:
+  description: "Get completed, failed, and partially available requests with LLM-optimized response"
+  fields: {}
+  response:
+    optional: true

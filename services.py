@@ -592,51 +592,102 @@ class LLMResponseBuilder:
         if action == "requests_found":
             results = requests_data.get("results", [])
             
-            # Filter for processing requests and sort by date
-            processing_requests = []
-            pending_requests = []
+            # Categorize ALL requests by status
+            processing_requests = []    # Status 2: Currently downloading
+            pending_requests = []       # Status 1: Waiting for approval  
+            available_requests = []     # Status 3: Completed/available in library
+            partially_available = []    # Status 4: Partially completed
+            failed_requests = []        # Status 5: Failed/unavailable
+            other_requests = []         # Any other status codes
             
             for request in results:
-                if request.get("status") == 2:  # 2 = processing/downloading
-                    processing_requests.append(request)
-                elif request.get("status") == 1:  # 1 = pending approval
+                status = request.get("status", 0)
+                if status == 1:
                     pending_requests.append(request)
+                elif status == 2:
+                    processing_requests.append(request)
+                elif status == 3:
+                    available_requests.append(request)
+                elif status == 4:
+                    partially_available.append(request)
+                elif status == 5:
+                    failed_requests.append(request)
+                else:
+                    other_requests.append(request)
             
-            # Sort by createdAt date (most recent first)
-            processing_requests.sort(key=lambda x: x.get("createdAt", ""), reverse=True)
-            pending_requests.sort(key=lambda x: x.get("createdAt", ""), reverse=True)
+            # Sort each category by createdAt date (most recent first)
+            for request_list in [processing_requests, pending_requests, available_requests, 
+                               partially_available, failed_requests, other_requests]:
+                request_list.sort(key=lambda x: x.get("createdAt", ""), reverse=True)
             
-            # Build response with processing requests prioritized
+            # Build response prioritizing active requests (processing + pending)
             active_requests = []
+            resolved_requests = []
             
-            # Add processing requests first
+            # Add processing requests first (highest priority)
             for request in processing_requests:
                 active_requests.append(LLMResponseBuilder._build_request_info(request))
             
-            # Add pending requests (up to total of 10)
+            # Add pending requests 
             for request in pending_requests:
                 if len(active_requests) < 10:
                     active_requests.append(LLMResponseBuilder._build_request_info(request))
             
+            # Add a few resolved/completed requests for context
+            for request in available_requests[:3]:  # Show up to 3 recent completed
+                resolved_requests.append(LLMResponseBuilder._build_request_info(request))
+            
+            # Count totals
             total_requests = len(results)
             processing_count = len(processing_requests)
             pending_count = len(pending_requests)
+            available_count = len(available_requests)
+            failed_count = len(failed_requests)
+            partially_available_count = len(partially_available)
+            other_count = len(other_requests)
+            
+            # Build status breakdown message
+            status_breakdown = []
+            if processing_count > 0:
+                status_breakdown.append(f"{processing_count} downloading")
+            if pending_count > 0:
+                status_breakdown.append(f"{pending_count} pending approval")
+            if available_count > 0:
+                status_breakdown.append(f"{available_count} completed")
+            if failed_count > 0:
+                status_breakdown.append(f"{failed_count} failed")
+            if partially_available_count > 0:
+                status_breakdown.append(f"{partially_available_count} partially available")
+            if other_count > 0:
+                status_breakdown.append(f"{other_count} other status")
+            
+            breakdown_text = ", ".join(status_breakdown) if status_breakdown else "no requests"
             
             return {
                 "action": "requests_found",
                 "total_requests": total_requests,
-                "processing_count": processing_count, 
-                "pending_count": pending_count,
+                "status_breakdown": {
+                    "processing_count": processing_count,
+                    "pending_count": pending_count, 
+                    "available_count": available_count,
+                    "failed_count": failed_count,
+                    "partially_available_count": partially_available_count,
+                    "other_count": other_count
+                },
                 "active_requests": active_requests,
-                "message": f"Found {total_requests} total requests ({processing_count} processing, {pending_count} pending)",
+                "recent_completed": resolved_requests,
+                "message": f"Found {total_requests} total requests ({breakdown_text})",
                 "llm_instructions": {
-                    "response_guidance": "Present this as a natural list of what's currently downloading or waiting for approval",
-                    "priority_note": "Processing requests are prioritized and shown first",
+                    "response_guidance": "Focus on active requests (downloading/pending) but mention the status breakdown to explain all request counts",
+                    "priority_note": "Processing requests are shown first, then pending requests",
                     "status_meanings": {
-                        "processing": "Currently downloading or being processed",
+                        "processing": "Currently downloading or being processed", 
                         "pending": "Waiting for approval",
-                        "available": "Ready to download but not started yet"
-                    }
+                        "available": "Completed and available in library",
+                        "failed": "Failed to download or unavailable",
+                        "partially_available": "Some content available, some missing"
+                    },
+                    "completed_note": "Recent completed requests are included for context"
                 },
                 "next_steps": {
                     "suggestion": "Use check_media_status with a specific title for detailed progress information",
@@ -647,14 +698,21 @@ class LLMResponseBuilder:
         if action == "no_requests":
             return {
                 "action": "no_requests",
-                "message": "No active requests found in Overseerr",
+                "message": "No requests found in Overseerr",
                 "total_requests": 0,
-                "processing_count": 0,
-                "pending_count": 0,
+                "status_breakdown": {
+                    "processing_count": 0,
+                    "pending_count": 0,
+                    "available_count": 0, 
+                    "failed_count": 0,
+                    "partially_available_count": 0,
+                    "other_count": 0
+                },
                 "active_requests": [],
+                "recent_completed": [],
                 "next_steps": {
                     "suggestion": "Add media using the add_media service to start new downloads",
-                    "note": "This is good - it means your download queue is clear!"
+                    "note": "This is good - it means your request history is empty!"
                 }
             }
         
