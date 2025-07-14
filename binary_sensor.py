@@ -28,10 +28,11 @@ async def async_setup_entry(
         _LOGGER.warning("Coordinator not found, skipping binary sensor setup")
         return
     
-    # Create binary sensors
+    # Create ONLY the downloads active binary sensor for testing
     binary_sensors = [
         HassarrDownloadsActiveBinarySensor(coordinator),
-        HassarrOverseerrOnlineBinarySensor(coordinator),
+        # Comment out other binary sensors until we get the first one working
+        # HassarrOverseerrOnlineBinarySensor(coordinator),
     ]
     
     async_add_entities(binary_sensors)
@@ -65,30 +66,31 @@ class HassarrDownloadsActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
             "last_update": self.coordinator.data.get("last_update"),
         }
 
-class HassarrOverseerrOnlineBinarySensor(CoordinatorEntity, BinarySensorEntity):
-    """Binary sensor for Overseerr online status."""
-    
-    def __init__(self, coordinator):
-        """Initialize the binary sensor."""
-        super().__init__(coordinator)
-        self._attr_name = "Overseerr Online"
-        self._attr_unique_id = f"{DOMAIN}_{BINARY_SENSOR_OVERSEERR_ONLINE}"
-        self._attr_icon = "mdi:server-network"
-        
-    @property
-    def is_on(self) -> bool:
-        """Return True if Overseerr is online."""
-        if self.coordinator.data:
-            return self.coordinator.data.get("overseerr_online", False)
-        return False
-        
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return entity specific state attributes."""
-        if not self.coordinator.data:
-            return {}
-            
-        return {
-            "last_update": self.coordinator.data.get("last_update"),
-            "connection_status": "connected" if self.is_on else "disconnected",
-        } 
+# Comment out other binary sensor classes until we get the first one working
+# class HassarrOverseerrOnlineBinarySensor(CoordinatorEntity, BinarySensorEntity):
+#     """Binary sensor for Overseerr online status."""
+#     
+#     def __init__(self, coordinator):
+#         """Initialize the binary sensor."""
+#         super().__init__(coordinator)
+#         self._attr_name = "Overseerr Online"
+#         self._attr_unique_id = f"{DOMAIN}_{BINARY_SENSOR_OVERSEERR_ONLINE}"
+#         self._attr_icon = "mdi:server-network"
+#         
+#     @property
+#     def is_on(self) -> bool:
+#         """Return True if Overseerr is online."""
+#         if self.coordinator.data:
+#             return self.coordinator.data.get("overseerr_online", False)
+#         return False
+#         
+#     @property
+#     def extra_state_attributes(self) -> Dict[str, Any]:
+#         """Return entity specific state attributes."""
+#         if not self.coordinator.data:
+#             return {}
+#             
+#         return {
+#             "last_update": self.coordinator.data.get("last_update"),
+#             "connection_status": "connected" if self.is_on else "disconnected",
+#         } 

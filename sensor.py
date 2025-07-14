@@ -32,11 +32,12 @@ async def async_setup_entry(
     """Set up Hassarr sensors from a config entry."""
     coordinator = hass.data[DOMAIN]["coordinator"]
     
-    # Create sensors
+    # Create ONLY the active downloads sensor for testing
     sensors = [
         HassarrActiveDownloadsSensor(coordinator),
-        HassarrQueueStatusSensor(coordinator),
-        HassarrOverseerrOnlineSensor(coordinator),
+        # Comment out other sensors until we get the first one working
+        # HassarrQueueStatusSensor(coordinator),
+        # HassarrOverseerrOnlineSensor(coordinator),
     ]
     
     async_add_entities(sensors)
@@ -110,80 +111,81 @@ class HassarrActiveDownloadsSensor(SensorEntity):
         await super().async_added_to_hass()
         self.coordinator.async_add_listener(self.async_write_ha_state)
 
-class HassarrQueueStatusSensor(SensorEntity):
-    """Sensor for queue status."""
-    
-    def __init__(self, coordinator: DataUpdateCoordinator):
-        """Initialize the sensor."""
-        self.coordinator = coordinator
-        self._attr_name = "Download Queue Status"
-        self._attr_unique_id = f"{DOMAIN}_{SENSOR_QUEUE_STATUS}"
-        self._attr_icon = "mdi:playlist-play"
-        
-    @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self.coordinator.last_update_success
-        
-    @property
-    def native_value(self) -> StateType:
-        """Return the state of the sensor."""
-        if not self.coordinator.data:
-            return "Unknown"
-            
-        active_downloads = self.coordinator.data.get("active_downloads", 0)
-        total_requests = self.coordinator.data.get("total_requests", 0)
-        
-        if active_downloads > 0:
-            return f"{active_downloads} active, {total_requests} total"
-        elif total_requests > 0:
-            return f"{total_requests} pending"
-        else:
-            return "Empty"
-            
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return entity specific state attributes."""
-        if not self.coordinator.data:
-            return {}
-            
-        return {
-            "active_downloads": self.coordinator.data.get("active_downloads", 0),
-            "total_requests": self.coordinator.data.get("total_requests", 0),
-            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
-            "last_update": self.coordinator.data.get("last_update"),
-        }
+# Comment out other sensor classes until we get the first one working
+# class HassarrQueueStatusSensor(SensorEntity):
+#     """Sensor for queue status."""
+#     
+#     def __init__(self, coordinator: DataUpdateCoordinator):
+#         """Initialize the sensor."""
+#         self.coordinator = coordinator
+#         self._attr_name = "Download Queue Status"
+#         self._attr_unique_id = f"{DOMAIN}_{SENSOR_QUEUE_STATUS}"
+#         self._attr_icon = "mdi:playlist-play"
+#         
+#     @property
+#     def available(self) -> bool:
+#         """Return True if entity is available."""
+#         return self.coordinator.last_update_success
+#         
+#     @property
+#     def native_value(self) -> StateType:
+#         """Return the state of the sensor."""
+#         if not self.coordinator.data:
+#             return "Unknown"
+#             
+#         active_downloads = self.coordinator.data.get("active_downloads", 0)
+#         total_requests = self.coordinator.data.get("total_requests", 0)
+#         
+#         if active_downloads > 0:
+#             return f"{active_downloads} active, {total_requests} total"
+#         elif total_requests > 0:
+#             return f"{total_requests} pending"
+#         else:
+#             return "Empty"
+#             
+#     @property
+#     def extra_state_attributes(self) -> Dict[str, Any]:
+#         """Return entity specific state attributes."""
+#         if not self.coordinator.data:
+#             return {}
+#             
+#         return {
+#             "active_downloads": self.coordinator.data.get("active_downloads", 0),
+#             "total_requests": self.coordinator.data.get("total_requests", 0),
+#             "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+#             "last_update": self.coordinator.data.get("last_update"),
+#         }
 
-class HassarrOverseerrOnlineSensor(SensorEntity):
-    """Sensor for Overseerr connection status."""
-    
-    def __init__(self, coordinator: DataUpdateCoordinator):
-        """Initialize the sensor."""
-        self.coordinator = coordinator
-        self._attr_name = "Overseerr Online"
-        self._attr_unique_id = f"{DOMAIN}_overseerr_online"
-        self._attr_icon = "mdi:server-network"
-        
-    @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self.coordinator.last_update_success
-        
-    @property
-    def native_value(self) -> StateType:
-        """Return the state of the sensor."""
-        if not self.coordinator.data:
-            return "Unknown"
-            
-        return "Online" if self.coordinator.data.get("overseerr_online", False) else "Offline"
-        
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return entity specific state attributes."""
-        if not self.coordinator.data:
-            return {}
-            
-        return {
-            "last_update": self.coordinator.data.get("last_update"),
-            "connection_status": "connected" if self.coordinator.data.get("overseerr_online", False) else "disconnected",
-        } 
+# class HassarrOverseerrOnlineSensor(SensorEntity):
+#     """Sensor for Overseerr connection status."""
+#     
+#     def __init__(self, coordinator: DataUpdateCoordinator):
+#         """Initialize the sensor."""
+#         self.coordinator = coordinator
+#         self._attr_name = "Overseerr Online"
+#         self._attr_unique_id = f"{DOMAIN}_overseerr_online"
+#         self._attr_icon = "mdi:server-network"
+#         
+#     @property
+#     def available(self) -> bool:
+#         """Return True if entity is available."""
+#         return self.coordinator.last_update_success
+#         
+#     @property
+#     def native_value(self) -> StateType:
+#         """Return the state of the sensor."""
+#         if not self.coordinator.data:
+#             return "Unknown"
+#             
+#         return "Online" if self.coordinator.data.get("overseerr_online", False) else "Offline"
+#         
+#     @property
+#     def extra_state_attributes(self) -> Dict[str, Any]:
+#         """Return entity specific state attributes."""
+#         if not self.coordinator.data:
+#             return {}
+#             
+#         return {
+#             "last_update": self.coordinator.data.get("last_update"),
+#             "connection_status": "connected" if self.coordinator.data.get("overseerr_online", False) else "disconnected",
+#         } 

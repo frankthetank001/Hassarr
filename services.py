@@ -30,7 +30,15 @@ class OverseerrAPI:
             async with self.session.request(method, url, headers=self.headers, json=data) as response:
                 if response.status in [200, 201, 204]:
                     content = await response.text()
-                    return json.loads(content) if content else {}
+                    if not content.strip():
+                        # Empty response (common for DELETE requests with 204)
+                        return {}
+                    try:
+                        return json.loads(content)
+                    except json.JSONDecodeError as json_err:
+                        _LOGGER.error(f"Invalid JSON response from {url}: {json_err}")
+                        _LOGGER.debug(f"Response content: {content[:200]}...")
+                        return None
                 else:
                     _LOGGER.error(f"API request failed: {response.status} - {await response.text()}")
                     return None
@@ -229,77 +237,77 @@ class LLMResponseBuilder:
             "message": f"Found {len(all_requests)} total request(s) with {len(processing_requests)} actively downloading. Focus on currently processing downloads unless asked for other details."
         }
 
-# New LLM-focused service handlers
-async def handle_check_media_status(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
-    """Handle checking media status with LLM-optimized response."""
-    title = call.data.get("title")
-    
-    if not title:
-        return {
-            "action": "missing_title",
-            "error": "No search title provided",
-            "message": "Please provide a movie or TV show title to search for"
-        }
-    
-    api = hass.data[DOMAIN].get('api')
-    if not api:
-        return {
-            "action": "connection_error",
-            "error": "Overseerr API client not found",
-            "message": "Overseerr API client is not configured"
-        }
-    
-    # Search for media
-    search_results = await api.search_media(title)
-    if not search_results or not search_results.get("results"):
-        return {
-            "action": "not_found",
-            "searched_title": title,
-            "message": f"No movies or TV shows found matching '{title}'"
-        }
-    
-    result = search_results["results"][0]
-    
-    # Get media details and requests
-    details_data = await api.get_media_details(result.get("mediaType", "movie"), result.get("id"))
-    requests_data = await api.get_requests()
-    
-    return LLMResponseBuilder.build_status_response(search_results, requests_data, details_data)
+# Comment out unused service handlers for now - keep only get_active_requests for testing
+# async def handle_check_media_status(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
+#     """Handle checking media status with LLM-optimized response."""
+#     title = call.data.get("title")
+#     
+#     if not title:
+#         return {
+#             "action": "missing_title",
+#             "error": "No search title provided",
+#             "message": "Please provide a movie or TV show title to search for"
+#         }
+#     
+#     api = hass.data[DOMAIN].get('api')
+#     if not api:
+#         return {
+#             "action": "connection_error",
+#             "error": "Overseerr API client not found",
+#             "message": "Overseerr API client is not configured"
+#         }
+#     
+#     # Search for media
+#     search_results = await api.search_media(title)
+#     if not search_results or not search_results.get("results"):
+#         return {
+#             "action": "not_found",
+#             "searched_title": title,
+#             "message": f"No movies or TV shows found matching '{title}'"
+#         }
+#     
+#     result = search_results["results"][0]
+#     
+#     # Get media details and requests
+#     details_data = await api.get_media_details(result.get("mediaType", "movie"), result.get("id"))
+#     requests_data = await api.get_requests()
+#     
+#     return LLMResponseBuilder.build_status_response(search_results, requests_data, details_data)
 
-async def handle_remove_media(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
-    """Handle removing media with LLM-optimized response."""
-    media_id = call.data.get("media_id")
-    
-    if not media_id:
-        return {
-            "action": "missing_media_id",
-            "error": "No media ID provided",
-            "message": "Please provide a media ID to remove"
-        }
-    
-    api = hass.data[DOMAIN].get('api')
-    if not api:
-        return {
-            "action": "connection_error",
-            "error": "Overseerr API client not found",
-            "message": "Overseerr API client is not configured"
-        }
-    
-    success = await api.delete_media(int(media_id))
-    
-    if success:
-        return {
-            "action": "media_removed",
-            "media_id": media_id,
-            "message": f"Media ID {media_id} has been successfully removed from Overseerr"
-        }
-    else:
-        return {
-            "action": "removal_failed",
-            "media_id": media_id,
-            "error": "Failed to remove media from Overseerr",
-            "message": f"Could not remove media ID {media_id} - check permissions, media status, or if ID exists"
-        }
+# async def handle_remove_media(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
+#     """Handle removing media with LLM-optimized response."""
+#     media_id = call.data.get("media_id")
+#     
+#     if not media_id:
+#         return {
+#             "action": "missing_media_id",
+#             "error": "No media ID provided",
+#             "message": "Please provide a media ID to remove"
+#         }
+#     
+#     api = hass.data[DOMAIN].get('api')
+#     if not api:
+#         return {
+#             "action": "connection_error",
+#             "error": "Overseerr API client not found",
+#             "message": "Overseerr API client is not configured"
+#         }
+#     
+#     success = await api.delete_media(int(media_id))
+#     
+#     if success:
+#         return {
+#             "action": "media_removed",
+#             "media_id": media_id,
+#             "message": f"Media ID {media_id} has been successfully removed from Overseerr"
+#         }
+#     else:
+#         return {
+#             "action": "removal_failed",
+#             "media_id": media_id,
+#             "error": "Failed to remove media from Overseerr",
+#             "message": f"Could not remove media ID {media_id} - check permissions, media status, or if ID exists"
+#         }
 
 async def handle_get_active_requests(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
     """Handle getting active requests with LLM-optimized response."""
@@ -322,76 +330,76 @@ async def handle_get_active_requests(hass: HomeAssistant, call: ServiceCall) -> 
     
     return LLMResponseBuilder.build_requests_response(requests_data)
 
-async def handle_search_media(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
-    """Handle searching for media."""
-    query = call.data.get("query")
-    
-    if not query:
-        return {
-            "action": "missing_query",
-            "error": "No search query provided",
-            "message": "Please provide a search query"
-        }
-    
-    api = hass.data[DOMAIN].get('api')
-    if not api:
-        return {
-            "action": "connection_error",
-            "error": "Overseerr API client not found",
-            "message": "Overseerr API client is not configured"
-        }
-    
-    search_results = await api.search_media(query)
-    
-    if not search_results or not search_results.get("results"):
-        return {
-            "action": "not_found",
-            "searched_query": query,
-            "message": f"No results found for '{query}'"
-        }
-    
-    return {
-        "action": "search_results",
-        "query": query,
-        "results": search_results["results"][:10],  # Limit to first 10 results
-        "total_results": len(search_results["results"]),
-        "message": f"Found {len(search_results['results'])} results for '{query}'"
-    }
+# async def handle_search_media(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
+#     """Handle searching for media."""
+#     query = call.data.get("query")
+#     
+#     if not query:
+#         return {
+#             "action": "missing_query",
+#             "error": "No search query provided",
+#             "message": "Please provide a search query"
+#         }
+#     
+#     api = hass.data[DOMAIN].get('api')
+#     if not api:
+#         return {
+#             "action": "connection_error",
+#             "error": "Overseerr API client not found",
+#             "message": "Overseerr API client is not configured"
+#         }
+#     
+#     search_results = await api.search_media(query)
+#     
+#     if not search_results or not search_results.get("results"):
+#         return {
+#             "action": "not_found",
+#             "searched_query": query,
+#             "message": f"No results found for '{query}'"
+#         }
+#     
+#     return {
+#         "action": "search_results",
+#         "query": query,
+#         "results": search_results["results"][:10],  # Limit to first 10 results
+#         "total_results": len(search_results["results"]),
+#         "message": f"Found {len(search_results['results'])} results for '{query}'"
+#     }
 
-async def handle_get_media_details(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
-    """Handle getting detailed media information."""
-    media_type = call.data.get("media_type")
-    tmdb_id = call.data.get("tmdb_id")
-    
-    if not media_type or not tmdb_id:
-        return {
-            "action": "missing_parameters",
-            "error": "Missing media_type or tmdb_id",
-            "message": "Please provide both media_type and tmdb_id"
-        }
-    
-    api = hass.data[DOMAIN].get('api')
-    if not api:
-        return {
-            "action": "connection_error",
-            "error": "Overseerr API client not found",
-            "message": "Overseerr API client is not configured"
-        }
-    
-    details = await api.get_media_details(media_type, int(tmdb_id))
-    
-    if not details:
-        return {
-            "action": "not_found",
-            "media_type": media_type,
-            "tmdb_id": tmdb_id,
-            "message": f"Could not find details for {media_type} with TMDB ID {tmdb_id}"
-        }
-    
-    return {
-        "action": "details_found",
-        "media_type": media_type,
-        "tmdb_id": tmdb_id,
-        "details": details,
-        "message": f"Found details for {media_type} with TMDB ID {tmdb_id}"
-    }
+# async def handle_get_media_details(hass: HomeAssistant, call: ServiceCall) -> Dict[str, Any]:
+#     """Handle getting detailed media information."""
+#     media_type = call.data.get("media_type")
+#     tmdb_id = call.data.get("tmdb_id")
+#     
+#     if not media_type or not tmdb_id:
+#         return {
+#             "action": "missing_parameters",
+#             "error": "Missing media_type or tmdb_id",
+#             "message": "Please provide both media_type and tmdb_id"
+#         }
+#     
+#     api = hass.data[DOMAIN].get('api')
+#     if not api:
+#         return {
+#             "action": "connection_error",
+#             "error": "Overseerr API client not found",
+#             "message": "Overseerr API client is not configured"
+#         }
+#     
+#     details = await api.get_media_details(media_type, int(tmdb_id))
+#     
+#     if not details:
+#         return {
+#             "action": "not_found",
+#             "media_type": media_type,
+#             "tmdb_id": tmdb_id,
+#             "message": f"Could not find details for {media_type} with TMDB ID {tmdb_id}"
+#         }
+#     
+#     return {
+#         "action": "details_found",
+#         "media_type": media_type,
+#         "tmdb_id": tmdb_id,
+#         "details": details,
+#         "message": f"Found details for {media_type} with TMDB ID {tmdb_id}"
+#     }

@@ -120,40 +120,41 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
 
     _LOGGER.info("Registering Hassarr services...")
 
-    async def handle_check_media_status_service(call: ServiceCall) -> None:
-        """Handle checking media status with LLM-optimized response."""
-        try:
-            result = await handle_check_media_status(hass, call)
-            # Store result in hass.data for potential use by other components
-            hass.data.setdefault(f"{DOMAIN}_results", {})
-            hass.data[f"{DOMAIN}_results"]["last_status_check"] = result
-            _LOGGER.info(f"Media status check result: {result}")
-        except Exception as e:
-            _LOGGER.error(f"Error in handle_check_media_status_service: {e}")
-            error_result = {
-                "action": "error",
-                "error": str(e),
-                "message": f"Service call failed: {e}"
-            }
-            hass.data.setdefault(f"{DOMAIN}_results", {})
-            hass.data[f"{DOMAIN}_results"]["last_status_check"] = error_result
+    # Comment out unused service handlers for now
+    # async def handle_check_media_status_service(call: ServiceCall) -> None:
+    #     """Handle checking media status with LLM-optimized response."""
+    #     try:
+    #         result = await handle_check_media_status(hass, call)
+    #         # Store result in hass.data for potential use by other components
+    #         hass.data.setdefault(f"{DOMAIN}_results", {})
+    #         hass.data[f"{DOMAIN}_results"]["last_status_check"] = result
+    #         _LOGGER.info(f"Media status check result: {result}")
+    #     except Exception as e:
+    #         _LOGGER.error(f"Error in handle_check_media_status_service: {e}")
+    #         error_result = {
+    #             "action": "error",
+    #             "error": str(e),
+    #             "message": f"Service call failed: {e}"
+    #         }
+    #         hass.data.setdefault(f"{DOMAIN}_results", {})
+    #         hass.data[f"{DOMAIN}_results"]["last_status_check"] = error_result
 
-    async def handle_remove_media_service(call: ServiceCall) -> None:
-        """Handle removing media with LLM-optimized response."""
-        try:
-            result = await handle_remove_media(hass, call)
-            hass.data.setdefault(f"{DOMAIN}_results", {})
-            hass.data[f"{DOMAIN}_results"]["last_removal"] = result
-            _LOGGER.info(f"Media removal result: {result}")
-        except Exception as e:
-            _LOGGER.error(f"Error in handle_remove_media_service: {e}")
-            error_result = {
-                "action": "error",
-                "error": str(e),
-                "message": f"Service call failed: {e}"
-            }
-            hass.data.setdefault(f"{DOMAIN}_results", {})
-            hass.data[f"{DOMAIN}_results"]["last_removal"] = error_result
+    # async def handle_remove_media_service(call: ServiceCall) -> None:
+    #     """Handle removing media with LLM-optimized response."""
+    #     try:
+    #         result = await handle_remove_media(hass, call)
+    #         hass.data.setdefault(f"{DOMAIN}_results", {})
+    #         hass.data[f"{DOMAIN}_results"]["last_removal"] = result
+    #         _LOGGER.info(f"Media removal result: {result}")
+    #     except Exception as e:
+    #         _LOGGER.error(f"Error in handle_remove_media_service: {e}")
+    #         error_result = {
+    #             "action": "error",
+    #             "error": str(e),
+    #             "message": f"Service call failed: {e}"
+    #         }
+    #         hass.data.setdefault(f"{DOMAIN}_results", {})
+    #         hass.data[f"{DOMAIN}_results"]["last_removal"] = error_result
 
     async def handle_get_active_requests_service(call: ServiceCall) -> None:
         """Handle getting active requests with LLM-optimized response."""
@@ -191,39 +192,39 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             hass.data.setdefault(f"{DOMAIN}_results", {})
             hass.data[f"{DOMAIN}_results"]["last_requests"] = error_result
 
-    async def handle_search_media_service(call: ServiceCall) -> None:
-        """Handle searching for media."""
-        try:
-            result = await handle_search_media(hass, call)
-            hass.data.setdefault(f"{DOMAIN}_results", {})
-            hass.data[f"{DOMAIN}_results"]["last_search"] = result
-            _LOGGER.info(f"Media search result: {result}")
-        except Exception as e:
-            _LOGGER.error(f"Error in handle_search_media_service: {e}")
-            error_result = {
-                "action": "error",
-                "error": str(e),
-                "message": f"Service call failed: {e}"
-            }
-            hass.data.setdefault(f"{DOMAIN}_results", {})
-            hass.data[f"{DOMAIN}_results"]["last_search"] = error_result
+    # async def handle_search_media_service(call: ServiceCall) -> None:
+    #     """Handle searching for media."""
+    #     try:
+    #         result = await handle_search_media(hass, call)
+    #         hass.data.setdefault(f"{DOMAIN}_results", {})
+    #         hass.data[f"{DOMAIN}_results"]["last_search"] = result
+    #         _LOGGER.info(f"Media search result: {result}")
+    #     except Exception as e:
+    #         _LOGGER.error(f"Error in handle_search_media_service: {e}")
+    #         error_result = {
+    #             "action": "error",
+    #             "error": str(e),
+    #             "message": f"Service call failed: {e}"
+    #         }
+    #         hass.data.setdefault(f"{DOMAIN}_results", {})
+    #         hass.data[f"{DOMAIN}_results"]["last_search"] = error_result
 
-    async def handle_get_media_details_service(call: ServiceCall) -> None:
-        """Handle getting detailed media information."""
-        try:
-            result = await handle_get_media_details(hass, call)
-            hass.data.setdefault(f"{DOMAIN}_results", {})
-            hass.data[f"{DOMAIN}_results"]["last_details"] = result
-            _LOGGER.info(f"Media details result: {result}")
-        except Exception as e:
-            _LOGGER.error(f"Error in handle_get_media_details_service: {e}")
-            error_result = {
-                "action": "error",
-                "error": str(e),
-                "message": f"Service call failed: {e}"
-            }
-            hass.data.setdefault(f"{DOMAIN}_results", {})
-            hass.data[f"{DOMAIN}_results"]["last_details"] = error_result
+    # async def handle_get_media_details_service(call: ServiceCall) -> None:
+    #     """Handle getting detailed media information."""
+    #     try:
+    #         result = await handle_get_media_details(hass, call)
+    #         hass.data.setdefault(f"{DOMAIN}_results", {})
+    #         hass.data[f"{DOMAIN}_results"]["last_details"] = result
+    #         _LOGGER.info(f"Media details result: {result}")
+    #     except Exception as e:
+    #         _LOGGER.error(f"Error in handle_get_media_details_service: {e}")
+    #         error_result = {
+    #             "action": "error",
+    #             "error": str(e),
+    #             "message": f"Service call failed: {e}"
+    #         }
+    #         hass.data.setdefault(f"{DOMAIN}_results", {})
+    #         hass.data[f"{DOMAIN}_results"]["last_details"] = error_result
 
     async def handle_test_service(call: ServiceCall) -> None:
         """Simple test service to verify service registration is working."""
@@ -243,16 +244,18 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         hass.data.setdefault(f"{DOMAIN}_results", {})
         hass.data[f"{DOMAIN}_results"]["simple_test"] = "Success"
     
-    # Register test service first
+    # Register test service first (for debugging)
     hass.services.async_register(DOMAIN, "test_service", handle_test_service, schema=vol.Schema({}))
     hass.services.async_register(DOMAIN, "simple_test", handle_simple_test_service, schema=vol.Schema({}))
     
-    # Register new LLM-focused services
-    hass.services.async_register(DOMAIN, SERVICE_CHECK_MEDIA_STATUS, handle_check_media_status_service, schema=CHECK_MEDIA_STATUS_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_REMOVE_MEDIA, handle_remove_media_service, schema=REMOVE_MEDIA_SCHEMA)
+    # Register ONLY the get_active_requests service for testing
     hass.services.async_register(DOMAIN, SERVICE_GET_ACTIVE_REQUESTS, handle_get_active_requests_service, schema=GET_ACTIVE_REQUESTS_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_SEARCH_MEDIA, handle_search_media_service, schema=SEARCH_MEDIA_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_GET_MEDIA_DETAILS, handle_get_media_details_service, schema=GET_MEDIA_DETAILS_SCHEMA)
+    
+    # Comment out other services until we get the first one working
+    # hass.services.async_register(DOMAIN, SERVICE_CHECK_MEDIA_STATUS, handle_check_media_status_service, schema=CHECK_MEDIA_STATUS_SCHEMA)
+    # hass.services.async_register(DOMAIN, SERVICE_REMOVE_MEDIA, handle_remove_media_service, schema=REMOVE_MEDIA_SCHEMA)
+    # hass.services.async_register(DOMAIN, SERVICE_SEARCH_MEDIA, handle_search_media_service, schema=SEARCH_MEDIA_SCHEMA)
+    # hass.services.async_register(DOMAIN, SERVICE_GET_MEDIA_DETAILS, handle_get_media_details_service, schema=GET_MEDIA_DETAILS_SCHEMA)
 
     # Verify service registration
     _LOGGER.info("Verifying service registration...")
