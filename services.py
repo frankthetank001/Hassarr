@@ -4,7 +4,7 @@
 import logging
 import aiohttp
 import json
-from urllib.parse import urljoin, urlparse, quote
+from urllib.parse import urljoin, urlparse, quote_plus
 from typing import Dict, Any, Optional
 from .const import DOMAIN
 
@@ -54,7 +54,7 @@ class OverseerrAPI:
     
     async def search_media(self, query: str) -> Optional[Dict]:
         """Search for media in Overseerr."""
-        encoded_query = quote(query)
+        encoded_query = quote_plus(query)
         endpoint = f"api/v1/search?query={encoded_query}"
         return await self._make_request(endpoint)
     
