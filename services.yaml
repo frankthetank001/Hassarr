@@ -17,8 +17,6 @@ check_media_status:
         text:
   response:
     optional: true
-  example:
-    title: "The Dark Knight"
 
 add_media:
   description: "Add movie or TV show to Overseerr with LLM-optimized response (auto-detects type)"
@@ -30,8 +28,6 @@ add_media:
         text:
   response:
     optional: true
-  example:
-    title: "Inception"
 
 search_media:
   description: "Search for movies and TV shows with LLM-optimized response (returns multiple results for selection)"
@@ -43,8 +39,6 @@ search_media:
         text:
   response:
     optional: true
-  example:
-    query: "Christopher Nolan movies"
 
 remove_media:
   description: "Remove media from Overseerr with LLM-optimized response (provide title OR media_id)"
@@ -61,8 +55,6 @@ remove_media:
         text:
   response:
     optional: true
-  example:
-    title: "The Matrix"
 
 get_active_requests:
   description: "Get current active requests with LLM-optimized response (focuses on processing requests, ordered by date)"
@@ -80,5 +72,20 @@ run_job:
         text:
   response:
     optional: true
-  example:
+
+# Examples section - separate from service definitions
+example:
+  check_media_status:
+    title: "The Dark Knight"
+  
+  add_media:
+    title: "Inception"
+  
+  search_media:
+    query: "Christopher Nolan movies"
+  
+  remove_media:
+    title: "The Matrix"
+  
+  run_job:
     job_id: "availability-sync"
