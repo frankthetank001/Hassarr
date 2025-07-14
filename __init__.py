@@ -7,6 +7,7 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from datetime import timedelta
+from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 from .services import (
@@ -61,6 +62,7 @@ async def _async_update_data(hass: HomeAssistant) -> dict:
                 "total_requests": 0,
                 "processing_requests": [],
                 "overseerr_online": False,
+                "last_update": dt_util.utcnow().isoformat()
             }
         
         all_requests = requests_data.get("results", [])
@@ -74,6 +76,7 @@ async def _async_update_data(hass: HomeAssistant) -> dict:
             "total_requests": len(all_requests),
             "processing_requests": processing_requests,
             "overseerr_online": True,
+            "last_update": dt_util.utcnow().isoformat()
         }
     except Exception as err:
         _LOGGER.error("Error communicating with API: %s", err)

@@ -1,7 +1,7 @@
 import logging
 import aiohttp
 import json
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import urljoin, urlparse, urlunparse, quote
 from typing import Dict, Any, Optional, List
 from .const import DOMAIN
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -40,7 +40,8 @@ class OverseerrAPI:
     
     async def search_media(self, query: str) -> Optional[Dict]:
         """Search for media in Overseerr."""
-        endpoint = f"api/v1/search?query={query}"
+        encoded_query = quote(query)
+        endpoint = f"api/v1/search?query={encoded_query}"
         return await self._make_request(endpoint)
     
     async def get_requests(self) -> Optional[Dict]:

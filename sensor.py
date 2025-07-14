@@ -73,7 +73,7 @@ class HassarrActiveDownloadsSensor(SensorEntity):
         processing_requests = self.coordinator.data.get("processing_requests", [])
         attributes = {
             "total_requests": self.coordinator.data.get("total_requests", 0),
-            "last_update": self.coordinator.last_update_time.isoformat() if self.coordinator.last_update_time else None,
+            "last_update": self.coordinator.data.get("last_update"),
         }
         
         # Add download details
@@ -151,7 +151,7 @@ class HassarrQueueStatusSensor(SensorEntity):
             "active_downloads": self.coordinator.data.get("active_downloads", 0),
             "total_requests": self.coordinator.data.get("total_requests", 0),
             "overseerr_online": self.coordinator.data.get("overseerr_online", False),
-            "last_update": self.coordinator.last_update_time.isoformat() if self.coordinator.last_update_time else None,
+            "last_update": self.coordinator.data.get("last_update"),
         }
 
 class HassarrOverseerrOnlineSensor(SensorEntity):
@@ -184,6 +184,6 @@ class HassarrOverseerrOnlineSensor(SensorEntity):
             return {}
             
         return {
-            "last_update": self.coordinator.last_update_time.isoformat() if self.coordinator.last_update_time else None,
+            "last_update": self.coordinator.data.get("last_update"),
             "connection_status": "connected" if self.coordinator.data.get("overseerr_online", False) else "disconnected",
         } 

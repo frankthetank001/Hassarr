@@ -62,7 +62,7 @@ class HassarrDownloadsActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
         return {
             "active_downloads": self.coordinator.data.get("active_downloads", 0),
             "total_requests": self.coordinator.data.get("total_requests", 0),
-            "last_update": self.coordinator.last_update_time.isoformat() if self.coordinator.last_update_time else None,
+            "last_update": self.coordinator.data.get("last_update"),
         }
 
 class HassarrOverseerrOnlineBinarySensor(CoordinatorEntity, BinarySensorEntity):
@@ -89,6 +89,6 @@ class HassarrOverseerrOnlineBinarySensor(CoordinatorEntity, BinarySensorEntity):
             return {}
             
         return {
-            "last_update": self.coordinator.last_update_time.isoformat() if self.coordinator.last_update_time else None,
+            "last_update": self.coordinator.data.get("last_update"),
             "connection_status": "connected" if self.is_on else "disconnected",
         } 
