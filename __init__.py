@@ -36,6 +36,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     )
     hass.data[DOMAIN]["api"] = api
     
+    # Set up sensor platform
+    await hass.config_entries.async_forward_entry_setups(config_entry, ["sensor"])
+    
     _LOGGER.info("Registering basic test service...")
     
     async def handle_test_connection_service(call: ServiceCall) -> dict:
@@ -90,13 +93,17 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    # Unload platforms
+    unload_ok = await hass.config_entries.async_unload_platforms(config_entry, ["sensor"])
+    
     # Remove services
     hass.services.async_remove(DOMAIN, "test_connection")
     
     # Clean up data
-    hass.data.pop(DOMAIN, None)
+    if unload_ok:
+        hass.data.pop(DOMAIN, None)
     
-    return True
+    return unload_ok
 
 async def update_listener(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
     """Handle options update."""
