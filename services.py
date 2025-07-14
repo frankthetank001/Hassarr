@@ -122,6 +122,88 @@ class LLMResponseBuilder:
     """Build structured responses for LLM consumption."""
     
     @staticmethod
+    def _build_download_info(media_info: Dict) -> Dict:
+        """Extract and format download information from mediaInfo."""
+        if not media_info:
+            return None
+            
+        download_status = media_info.get("downloadStatus", [])
+        download_status_4k = media_info.get("downloadStatus4k", [])
+        
+        # Combine regular and 4K downloads
+        all_downloads = download_status + download_status_4k
+        
+        if not all_downloads:
+            return None
+        
+        # Process each download
+        processed_downloads = []
+        total_size = 0
+        total_remaining = 0
+        
+        for download in all_downloads:
+            size = download.get("size", 0)
+            size_left = download.get("sizeLeft", 0)
+            
+            # Calculate progress
+            if size > 0:
+                progress_percent = round(((size - size_left) / size) * 100, 1)
+                size_downloaded = size - size_left
+            else:
+                progress_percent = 0
+                size_downloaded = 0
+            
+            # Convert bytes to more readable units
+            size_gb = round(size / (1024 ** 3), 2) if size > 0 else 0
+            size_left_gb = round(size_left / (1024 ** 3), 2) if size_left > 0 else 0
+            downloaded_gb = round(size_downloaded / (1024 ** 3), 2) if size_downloaded > 0 else 0
+            
+            processed_download = {
+                "title": download.get("title", "Unknown"),
+                "status": download.get("status", "unknown"),
+                "progress_percent": progress_percent,
+                "time_left": download.get("timeLeft", "Unknown"),
+                "estimated_completion": download.get("estimatedCompletionTime", "Unknown"),
+                "size_total_gb": size_gb,
+                "size_remaining_gb": size_left_gb,
+                "size_downloaded_gb": downloaded_gb,
+                "download_id": download.get("downloadId", ""),
+                "external_id": download.get("externalId", ""),
+                "media_type": download.get("mediaType", "unknown")
+            }
+            
+            processed_downloads.append(processed_download)
+            total_size += size
+            total_remaining += size_left
+        
+        # Calculate overall progress
+        if total_size > 0:
+            overall_progress = round(((total_size - total_remaining) / total_size) * 100, 1)
+        else:
+            overall_progress = 0
+        
+        # Find the download with the least time remaining for "primary" download
+        primary_download = None
+        if processed_downloads:
+            # Try to find one with actual time data, fallback to first
+            for download in processed_downloads:
+                if download["time_left"] != "Unknown" and download["time_left"]:
+                    primary_download = download
+                    break
+            if not primary_download:
+                primary_download = processed_downloads[0]
+        
+        return {
+            "active_downloads": len(all_downloads),
+            "overall_progress_percent": overall_progress,
+            "total_size_gb": round(total_size / (1024 ** 3), 2) if total_size > 0 else 0,
+            "total_remaining_gb": round(total_remaining / (1024 ** 3), 2) if total_remaining > 0 else 0,
+            "primary_download": primary_download,
+            "all_downloads": processed_downloads,
+            "has_4k_downloads": len(download_status_4k) > 0
+        }
+    
+    @staticmethod
     def build_status_response(
         action: str,
         title: str = None,
@@ -186,6 +268,7 @@ class LLMResponseBuilder:
                         "status_text": LLMResponseBuilder._get_status_text(search_result.get("mediaInfo", {}).get("status")) if search_result.get("mediaInfo") else "Not Requested",
                         "release_date": search_result.get("releaseDate") or search_result.get("firstAirDate", "Unknown"),
                         "rating": search_result.get("voteAverage", 0),
+                        "download_info": LLMResponseBuilder._build_download_info(search_result.get("mediaInfo")),
                         "request_details": LLMResponseBuilder._build_request_details(matching_request)
                     },
                     "content_details": {
@@ -320,7 +403,8 @@ class LLMResponseBuilder:
                     "rating": search_result.get("voteAverage", 0),
                     "overview_short": media_details.get("overview", "")[:150] + "..." if media_details and len(media_details.get("overview", "")) > 150 else media_details.get("overview", "") if media_details else "",
                     "genres": [genre["name"] for genre in media_details.get("genres", [])][:2] if media_details else [],
-                    "watch_url": search_result.get('mediaInfo', {}).get('mediaUrl')
+                    "watch_url": search_result.get('mediaInfo', {}).get('mediaUrl'),
+                    "download_info": LLMResponseBuilder._build_download_info(search_result.get("mediaInfo"))
                 },
                 "message": f"{search_result.get('mediaType', 'Media').title()} already exists in Overseerr"
             }
@@ -433,7 +517,8 @@ class LLMResponseBuilder:
                         "available": result.get("mediaInfo") is not None,
                         "status": result.get("mediaInfo", {}).get("status") if result.get("mediaInfo") else None,
                         "status_text": LLMResponseBuilder._get_status_text(result.get("mediaInfo", {}).get("status")) if result.get("mediaInfo") else "Not in library"
-                    }
+                    },
+                    "download_info": LLMResponseBuilder._build_download_info(result.get("mediaInfo"))
                 }
                 
                 # Add media-specific info
@@ -809,6 +894,9 @@ class LLMResponseBuilder:
         if len(overview) > 200:
             overview = overview[:200] + "..."
         
+        # Extract download information if available
+        download_info = LLMResponseBuilder._build_download_info(media)
+        
         return {
             "title": title,
             "year": year,
@@ -819,7 +907,8 @@ class LLMResponseBuilder:
             "request_id": request.get("id", 0),
             "requested_date": created_date,
             "requested_by": request.get("requestedBy", {}).get("displayName", "Unknown User"),
-            "overview": overview
+            "overview": overview,
+            "download_info": download_info
         }
 
     @staticmethod
