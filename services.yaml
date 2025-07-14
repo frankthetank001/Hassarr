@@ -13,6 +13,7 @@ check_media_status:
     title:
       description: "Movie or TV show title to search for"
       required: true
+      example: "The Dark Knight"
       selector:
         text:
   response:
@@ -24,6 +25,7 @@ add_media:
     title:
       description: "Movie or TV show title to search for and add"
       required: true
+      example: "Inception"
       selector:
         text:
   response:
@@ -35,6 +37,7 @@ search_media:
     query:
       description: "Search query for movies or TV shows (can include titles, actors, genres, etc.)"
       required: true
+      example: "Christopher Nolan movies"
       selector:
         text:
   response:
@@ -46,11 +49,13 @@ remove_media:
     title:
       description: "Movie or TV show title to search for and remove (will find media_id automatically)"
       required: false
+      example: "The Matrix"
       selector:
         text:
     media_id:
       description: "Direct media ID to remove (from mediaInfo.id in status checks)"
       required: false
+      example: "12345"
       selector:
         text:
   response:
@@ -68,24 +73,8 @@ run_job:
     job_id:
       description: "Job ID to run (available from Jobs Status sensor or get_active_requests)"
       required: true
+      example: "availability-sync"
       selector:
         text:
   response:
     optional: true
-
-# Examples section - separate from service definitions
-example:
-  check_media_status:
-    title: "The Dark Knight"
-  
-  add_media:
-    title: "Inception"
-  
-  search_media:
-    query: "Christopher Nolan movies"
-  
-  remove_media:
-    title: "The Matrix"
-  
-  run_job:
-    job_id: "availability-sync"
