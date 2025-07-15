@@ -267,6 +267,12 @@ Here is a list of planned improvements for the integration:
 
 ---
 
+## Acknowledgments
+
+This project was originally forked from [TegridyTate/Hassarr](https://github.com/TegridyTate/Hassarr). A big thank you to TegridyTate for the original work that provided the foundation for this extended, LLM-focused version.
+
+---
+
 ## Troubleshooting
 
 ### Debug Logging
