@@ -1,38 +1,41 @@
 # File: test_llm_functions.yaml
-# Testing the new Hassarr LLM functions
+# Testing the new Hassarr LLM API integration
 
-# After setting up the integration, your LLM should be able to call these functions:
+# After setting up the integration, your LLM will have access to the "Hassarr Media Management" API with these tools:
 
-# 1. HassarrAddMedia - Add movies/TV shows
+# 1. hassarr_add_media - Add movies/TV shows
 # Example: "Add The Dark Knight to my library"
-# LLM will call: HassarrAddMedia(title="The Dark Knight")
+# LLM will call: hassarr_add_media(title="The Dark Knight")
 
-# 2. HassarrCheckStatus - Check media status  
+# 2. hassarr_check_status - Check media status  
 # Example: "What's the status of Inception?"
-# LLM will call: HassarrCheckStatus(title="Inception")
+# LLM will call: hassarr_check_status(title="Inception")
 
-# 3. HassarrSearchMedia - Search for media
+# 3. hassarr_search_media - Search for media
 # Example: "Search for Christopher Nolan movies"
-# LLM will call: HassarrSearchMedia(query="Christopher Nolan movies")
+# LLM will call: hassarr_search_media(query="Christopher Nolan movies")
 
-# 4. HassarrGetActiveDownloads - Get current downloads
+# 4. hassarr_get_active_downloads - Get current downloads
 # Example: "What's downloading right now?"
-# LLM will call: HassarrGetActiveDownloads()
+# LLM will call: hassarr_get_active_downloads()
 
-# 5. HassarrTestConnection - Test system status
-# Example: "How is my media server?"
-# LLM will call: HassarrTestConnection()
-
-# To verify the functions are available:
+# To verify the API is available:
 # 1. Go to Settings > Devices & Services > Hassarr
 # 2. Check that the integration is loaded without errors
-# 3. Check Home Assistant logs for "Hassarr LLM API registered successfully"
-# 4. Your LLM should now see these functions available for media management
+# 3. Check Home Assistant logs for "Successfully registered Hassarr LLM API"
+# 4. Your conversation agents should now see the "Hassarr Media Management" API available
 
-# Manual testing via Developer Tools (if your LLM supports it):
-# You can also test these by configuring your LLM to call the functions manually
-# or by using a conversation agent that can make function calls.
+# Testing via Developer Tools > Services:
+# You can test the underlying services that power these tools:
+# - hassarr.add_media
+# - hassarr.check_media_status  
+# - hassarr.search_media
+# - hassarr.get_active_requests
 
-# The functions return structured JSON responses optimized for LLM interpretation,
-# allowing your chat assistant to provide detailed, natural language responses
-# about your media library status and operations. 
+# How it works:
+# - The tools are exposed to LLMs via Home Assistant's native LLM API
+# - When your LLM calls a tool, it triggers the corresponding Hassarr service
+# - The service returns structured JSON optimized for LLM interpretation
+# - Your LLM can then provide natural language responses based on the data
+
+# Note: This replaces the script-based approach and provides direct tool access to LLMs 

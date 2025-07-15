@@ -1,5 +1,5 @@
 # File: llm_api.py
-# Updated for better Home Assistant LLM compatibility
+# Home Assistant LLM API implementation for Hassarr
 
 import logging
 import voluptuous as vol
@@ -11,14 +11,13 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.config_entries import ConfigEntry
 
 from .const import DOMAIN
-from .services import LLMResponseBuilder
 
 _LOGGER = logging.getLogger(__name__)
 
 class HassarrAddMediaTool(llm.Tool):
     """Tool to add media to Overseerr."""
     
-    name = "hassarr_add_media"  # Changed: use underscores, not camelCase
+    name = "hassarr_add_media"
     description = "Add a movie or TV show to Overseerr for download. Automatically detects whether it's a movie or TV show."
     
     parameters = vol.Schema({
@@ -161,38 +160,47 @@ class HassarrGetActiveDownloadsTool(llm.Tool):
             }
 
 
+class HassarrAPI(llm.API):
+    """Hassarr API for LLM integration."""
+    
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry):
+        """Initialize the API."""
+        super().__init__(
+            hass=hass,
+            id=f"hassarr-{entry.entry_id}",
+            name="Hassarr Media Management"
+        )
+        self.entry = entry
+    
+    async def async_get_api_instance(self, llm_context: llm.LLMContext) -> llm.APIInstance:
+        """Return the instance of the API."""
+        return llm.APIInstance(
+            api=self,
+            api_prompt="Use these tools to manage your media library through Overseerr. You can add movies and TV shows, check their status, search for content, and get active downloads.",
+            llm_context=llm_context,
+            tools=[
+                HassarrAddMediaTool(),
+                HassarrCheckStatusTool(),
+                HassarrSearchMediaTool(),
+                HassarrGetActiveDownloadsTool(),
+            ]
+        )
+
+
 async def async_setup_llm_api(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
     """Set up the LLM API for Hassarr."""
-    _LOGGER.info("Setting up Hassarr LLM API tools...")
+    _LOGGER.info("Setting up Hassarr LLM API...")
     
     try:
-        # Register each tool individually
-        tools = [
-            HassarrAddMediaTool(),
-            HassarrCheckStatusTool(), 
-            HassarrSearchMediaTool(),
-            HassarrGetActiveDownloadsTool(),
-        ]
+        # Create and register the API
+        api = HassarrAPI(hass, config_entry)
+        unregister_func = llm.async_register_api(hass, api)
         
-        # Register tools with Home Assistant's LLM system
-        for tool in tools:
-            llm.async_register_tool(hass, tool)
-            _LOGGER.info(f"Registered LLM tool: {tool.name}")
+        # Store unregister function for cleanup
+        hass.data[DOMAIN]["unregister_llm_api"] = unregister_func
+        config_entry.async_on_unload(unregister_func)
         
-        _LOGGER.info(f"Successfully registered {len(tools)} Hassarr LLM tools")
-        
-        # Store unregister functions for cleanup
-        def unregister_tools():
-            for tool in tools:
-                try:
-                    llm.async_unregister_tool(hass, tool)
-                    _LOGGER.info(f"Unregistered LLM tool: {tool.name}")
-                except Exception as e:
-                    _LOGGER.warning(f"Failed to unregister tool {tool.name}: {e}")
-        
-        # Store unregister function
-        hass.data[DOMAIN]["unregister_llm_tools"] = unregister_tools
-        config_entry.async_on_unload(unregister_tools)
+        _LOGGER.info(f"Successfully registered Hassarr LLM API: {api.name}")
         
     except Exception as e:
         _LOGGER.error(f"Failed to setup LLM API: {e}")
@@ -201,7 +209,7 @@ async def async_setup_llm_api(hass: HomeAssistant, config_entry: ConfigEntry) ->
 
 async def async_unload_llm_api(hass: HomeAssistant) -> None:
     """Unload the LLM API for Hassarr."""
-    if DOMAIN in hass.data and "unregister_llm_tools" in hass.data[DOMAIN]:
-        unregister_func = hass.data[DOMAIN].pop("unregister_llm_tools")
+    if DOMAIN in hass.data and "unregister_llm_api" in hass.data[DOMAIN]:
+        unregister_func = hass.data[DOMAIN].pop("unregister_llm_api")
         unregister_func()
-        _LOGGER.info("Hassarr LLM tools unregistered")
+        _LOGGER.info("Hassarr LLM API unregistered")
