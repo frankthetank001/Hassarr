@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "documentation": "https://github.com/frankthetank001/Hassarr",
   "issue_tracker": "https://github.com/frankthetank001/Hassarr/issues",
-  "requirements": ["aiohttp"],
+  "requirements": ["aiohttp", "voluptuous"],
   "dependencies": [],
   "codeowners": ["@frankthetank001"],
   "config_flow": true,
