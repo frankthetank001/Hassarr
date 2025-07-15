@@ -1,0 +1,38 @@
+# File: test_llm_functions.yaml
+# Testing the new Hassarr LLM functions
+
+# After setting up the integration, your LLM should be able to call these functions:
+
+# 1. HassarrAddMedia - Add movies/TV shows
+# Example: "Add The Dark Knight to my library"
+# LLM will call: HassarrAddMedia(title="The Dark Knight")
+
+# 2. HassarrCheckStatus - Check media status  
+# Example: "What's the status of Inception?"
+# LLM will call: HassarrCheckStatus(title="Inception")
+
+# 3. HassarrSearchMedia - Search for media
+# Example: "Search for Christopher Nolan movies"
+# LLM will call: HassarrSearchMedia(query="Christopher Nolan movies")
+
+# 4. HassarrGetActiveDownloads - Get current downloads
+# Example: "What's downloading right now?"
+# LLM will call: HassarrGetActiveDownloads()
+
+# 5. HassarrTestConnection - Test system status
+# Example: "How is my media server?"
+# LLM will call: HassarrTestConnection()
+
+# To verify the functions are available:
+# 1. Go to Settings > Devices & Services > Hassarr
+# 2. Check that the integration is loaded without errors
+# 3. Check Home Assistant logs for "Hassarr LLM API registered successfully"
+# 4. Your LLM should now see these functions available for media management
+
+# Manual testing via Developer Tools (if your LLM supports it):
+# You can also test these by configuring your LLM to call the functions manually
+# or by using a conversation agent that can make function calls.
+
+# The functions return structured JSON responses optimized for LLM interpretation,
+# allowing your chat assistant to provide detailed, natural language responses
+# about your media library status and operations. 
