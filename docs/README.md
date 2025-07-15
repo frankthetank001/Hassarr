@@ -12,6 +12,8 @@ This integration is designed for **LLM agentic actions** rather than traditional
 - **Rich Responses**: Structured data enables detailed, natural responses
 - **Error Handling**: Comprehensive error types for appropriate LLM responses
 
+**Current Implementation:** Uses script entities to expose functionality to conversation agents like Ollama. **Future Enhancement:** If conversation agents add support for custom LLM APIs, Hassarr could provide native tool integration.
+
 See the [LLM Integration Examples](#llm-integration-examples) section below for implementation details.
 
 ## Features

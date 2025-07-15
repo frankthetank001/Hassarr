@@ -6,6 +6,8 @@ How to integrate Hassarr with LLM chat assistants for natural language media man
 
 Hassarr is designed specifically for **LLM agentic integration**, allowing chat assistants to call services directly and interpret structured responses for natural conversations.
 
+**Implementation Note:** Currently uses script entities for maximum compatibility with conversation agents like Ollama. Future versions may include native LLM API tools if conversation agent support becomes available.
+
 ## Key Benefits
 
 - **Natural Language Processing** - No rigid command patterns required

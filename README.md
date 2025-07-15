@@ -41,6 +41,8 @@ Hassarr is a Home Assistant integration that connects your media management serv
 
 - **[User Guide](docs/USER_GUIDE.md)** - Complete setup and usage instructions
 - **[Chat Assistant Integration](docs/CHAT_ASSISTANT.md)** - LLM integration guide
+- **[Ollama Setup Guide](OLLAMA_SETUP.md)** - Specific setup for Ollama conversation agents
+- **[Testing Guide](TESTING_GUIDE.md)** - Comprehensive testing instructions
 - **[Migration Guide](docs/MIGRATION.md)** - Upgrading from legacy scripts
 
 ## 🔧 Supported Services

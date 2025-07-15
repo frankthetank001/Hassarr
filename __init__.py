@@ -13,7 +13,6 @@ _LOGGER = logging.getLogger(__name__)
 
 from .services import OverseerrAPI, LLMResponseBuilder
 from .const import DOMAIN
-from .llm_api import async_setup_llm_api, async_unload_llm_api
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Hassarr integration."""
@@ -640,9 +639,6 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     
     _LOGGER.info("Hassarr services registered successfully (test_connection, check_media_status, add_media, search_media, remove_media, get_active_requests, run_job)")
     
-    # Set up LLM API to expose functions to conversation agents
-    await async_setup_llm_api(hass, config_entry)
-    
     return True
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -658,9 +654,6 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     hass.services.async_remove(DOMAIN, "remove_media")
     hass.services.async_remove(DOMAIN, "get_active_requests")
     hass.services.async_remove(DOMAIN, "run_job")
-    
-    # Unload LLM API
-    await async_unload_llm_api(hass)
     
     # Clean up data
     if unload_ok:
