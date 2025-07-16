@@ -359,17 +359,27 @@ automation:
 
 ---
 
-## Future Enhancements
+## Future Enhancements & Roadmap
 
-Here is a list of planned improvements for the integration:
+### Completed Features ✅
+- **Enhanced Natural Language Processing**: Support for season parsing with complex requests like "seasons 1 to 5", "seasons 1, 3, 5", or "all seasons"
+- **Bulk Season Operations**: Requesting multiple non-consecutive seasons in a single command
+- **User Mapping System**: Mapping Home Assistant users to Overseerr accounts with permission control
+- **Smart Season Suggestions**: Automatic suggestions for missing seasons when adding existing TV shows
+- **Detailed Season Information**: Rich season-specific status details including which seasons are downloading, available, or pending
+- **Episode-level Information**: Detailed progress tracking for individual episodes within seasons
 
-*   **Enhanced Natural Language Processing**: Expand season parsing to handle more complex requests like "seasons 3-5", "odd numbered seasons", or "final season".
-*   **Bulk Season Operations**: Allow requesting multiple non-consecutive seasons in a single command.
-*   **Radarr/Sonarr Feature Parity**: Update the direct Radarr/Sonarr mode to have the same rich service calls and sensor support as the Overseerr/Jellyseerr mode.
-*   **Smarter Status Checks**: Enhance the `check_media_status` service to query Radarr/Sonarr directly if a movie is not found or is stuck in a non-downloading state in Overseerr.
-*   **Availability Sync**: Improve the status check to poll Radarr/Sonarr directly if a request is 100% downloaded in the client but not yet marked as "Available" in Overseerr.
-*   **Post-Action Sync**: Add a post-action hook to the `add_media` and `remove_media` services to automatically trigger the media availability and download sync jobs in Overseerr, ensuring the UI reflects changes almost instantly.
-*   **Quality Profile & 4K Support**: Add support for specifying quality profiles (e.g., "in 1080p", "in highest quality") and making 4K requests directly in the service call.
+### Upcoming Enhancements 🚀
+- **Radarr/Sonarr Feature Parity**: Update the direct Radarr/Sonarr mode to have the same rich service calls and sensor support as the Overseerr/Jellyseerr mode
+- **Smarter Status Checks**: Enhance the `check_media_status` service to query Radarr/Sonarr directly if a movie is not found or is stuck in a non-downloading state in Overseerr
+- **Availability Sync**: Improve the status check to poll Radarr/Sonarr directly if a request is 100% downloaded in the client but not yet marked as "Available" in Overseerr
+- **Post-Action Sync**: Add a post-action hook to the `add_media` and `remove_media` services to automatically trigger the media availability and download sync jobs in Overseerr, ensuring the UI reflects changes almost instantly
+- **Quality Profile & 4K Support**: Add support for specifying quality profiles (e.g., "in 1080p", "in highest quality") and making 4K requests directly in the service call
+- **Extended LLM Integration**: Improved compatibility with OpenAI and other conversation agents beyond Ollama
+- **Improved Error Handling**: More graceful recovery from API errors and better feedback to users
+- **Enhanced Monitoring**: Additional sensors for system performance and request history analytics
+
+Have a feature suggestion? Open an issue on GitHub and let us know what you'd like to see next!
 
 ---
 
