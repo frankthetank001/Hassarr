@@ -140,6 +140,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     def _parse_season_request(season_input, season_analysis: dict = None) -> dict:
         """Parse natural language season requests.
         LLM should provide clean parameters, but we handle common cases as fallback."""
+        import re
+        
         if not season_input:
             return {"seasons": None, "type": "default"}
         
@@ -199,7 +201,6 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 return {"seasons": seasons, "type": "multiple"}
         
         # Fallback - try to extract any numbers
-        import re
         numbers = re.findall(r'\d+', season_str)
         if numbers:
             return {"seasons": [int(num) for num in numbers], "type": "extracted"}
@@ -604,7 +605,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             # Get detailed error from API if available, otherwise use exception
             api = hass.data[DOMAIN].get("api")
             error_details = api.last_error if api and api.last_error else str(e)
-            result = await LLMResponseBuilder.build_add_media_response("connection_error", title, error_details=error_details, season=season)
+            # Make sure season is defined before using it in the error response
+            season_value = season_input if 'season' not in locals() else season
+            result = await LLMResponseBuilder.build_add_media_response("connection_error", title, error_details=error_details, season=season_value)
             result["user_context"] = await _get_user_context(call)
             hass.data[DOMAIN]["last_add_media"] = result
             return result
