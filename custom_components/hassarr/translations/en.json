@@ -1,0 +1,24 @@
+{
+  "config": {
+    "step": {
+      "overseerr_user_mapping": {
+        "title": "Map Home Assistant Users to Overseerr",
+        "description": "Enter a Home Assistant username and select the corresponding Overseerr user. Add one mapping at a time. When finished, leave both fields empty and click Submit."
+      },
+      "reconfigure_overseerr_user": {
+        "title": "Update User Mapping",
+        "description": "Enter a Home Assistant username and select the corresponding Overseerr user. Add one mapping at a time. When finished, leave both fields empty and click Submit."
+      }
+    },
+    "abort": {
+      "failed_to_fetch_ha_users": "Failed to fetch Home Assistant users - check logs for details",
+      "failed_to_fetch_overseerr_users": "Failed to connect to Overseerr or fetch users - check URL and API key",
+      "no_overseerr_users_found": "No users found in your Overseerr instance - please create at least one user there first"
+    },
+    "error": {
+      "missing_overseerr_info": "Please provide both Overseerr URL and API key",
+      "missing_radarr_info": "Please provide both Radarr URL and API key",
+      "missing_sonarr_info": "Please provide both Sonarr URL and API key"
+    }
+  }
+} 

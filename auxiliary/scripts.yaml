@@ -17,7 +17,7 @@ hassarr_check_media_status:
   fields:
     title:
       name: "Media Title"
-      description: "Movie or TV show title to search for"
+      description: "Movie or TV show title to search for (JUST the title, no season info)"
       required: true
       selector:
         text:
@@ -38,7 +38,7 @@ hassarr_search_media:
   fields:
     query:
       name: "Search Query"
-      description: "Search term to look for movies or TV shows"
+      description: "Search term to look for movies or TV shows (can include any search criteria)"
       required: true
       selector:
         text:
@@ -53,21 +53,34 @@ hassarr_search_media:
 
 hassarr_add_media:
   alias: "Add Media to Overseerr"
-  description: "Add a movie or TV show to Overseerr for download. Auto-detects whether it's a movie or TV show."
+  description: "Add a movie or TV show to Overseerr for download. For TV shows, you can specify a season number or 'all seasons' to request the entire series."
   icon: mdi:plus-circle-multiple
   mode: single
   fields:
     title:
       name: "Media Title"
-      description: "Movie or TV show title to add to Overseerr"
+      description: "The movie or TV show name (e.g. 'Breaking Bad', 'The Matrix'). For 'add season 2 of Breaking Bad', use title='Breaking Bad' and season='2'."
       required: true
       selector:
         text:
-      example: "Inception"
+      example: "Breaking Bad"
+    season:
+      name: "Season (TV Shows Only)"
+      description: "For TV shows: season number (1, 2, 3), word numbers ('season two'), ranges ('seasons 1 to 5'), multiple seasons ('1, 2, 3'), or 'all seasons' for entire series. Leave empty for movies or to default to season 1."
+      required: false
+      selector:
+        text:
+      example: "2"
   sequence:
     - service: hassarr.add_media
       data:
         title: "{{ title }}"
+        season: >-
+          {% if season is defined and season is not none and season != '' %}
+            {{ season }}
+          {% else %}
+            {{ none }}
+          {% endif %}
       response_variable: add_result
     - stop: ""
       response_variable: add_result
@@ -80,7 +93,7 @@ hassarr_remove_media:
   fields:
     title:
       name: "Media Title (Optional)"
-      description: "Movie or TV show title to search for and remove"
+      description: "Movie or TV show title to search for and remove (JUST the title, no season info)"
       required: false
       selector:
         text:

@@ -5,8 +5,12 @@ from urllib.parse import urljoin
 import voluptuous as vol
 from homeassistant import config_entries
 import aiohttp
+import logging
+import homeassistant.helpers.config_validation as cv
 
 from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 class HassarrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
@@ -71,35 +75,100 @@ class HassarrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_reconfigure_overseerr_user(self, user_input=None):
-        """Handle reconfiguration for Overseerr user selection."""
-        if user_input is not None:
+        """Handle reconfiguration for Overseerr user selection and mapping."""
+        if user_input is None:
+            # Get all Overseerr users
+            try:
+                overseerr_url = self._get_reconfigure_entry().data.get("overseerr_url")
+                overseerr_api_key = self._get_reconfigure_entry().data.get("overseerr_api_key")
+                overseerr_users = await self._fetch_overseerr_users(overseerr_url, overseerr_api_key)
+                if not overseerr_users:
+                    return self.async_abort(reason="no_overseerr_users_found")
+                
+                # Create options with more descriptive labels including user roles if available
+                overseerr_options = {}
+                for user in overseerr_users:
+                    username = user["username"]
+                    display_name = user.get("displayName", "")
+                    
+                    # Add display name if available
+                    if display_name and display_name != username:
+                        label = f"{username} ({display_name})"
+                    else:
+                        label = username
+                    
+                    # Add user permissions if available
+                    if user.get("permissions", 0) == 2:
+                        label += " [Admin]"
+                    
+                    overseerr_options[user["id"]] = label
+                
+                # Get existing data to pre-fill the form
+                existing_data = self._get_reconfigure_entry().data
+                existing_user_mappings = existing_data.get("user_mappings", {})
+                existing_default_user = existing_data.get("overseerr_user_id")
+                
+                # Create a simple form for manual user mapping
+                return self.async_show_form(
+                    step_id="reconfigure_overseerr_user",
+                    data_schema=vol.Schema({
+                        vol.Optional("manual_mapping"): cv.string,
+                        vol.Optional("overseerr_user"): vol.In(overseerr_options),
+                        vol.Optional("default_overseerr_user", default=existing_default_user): vol.In(overseerr_options)
+                    }),
+                    description_placeholders={
+                        "note": "Enter Home Assistant username and select Overseerr user, then click Submit. Repeat for each user you want to map. When finished, leave the fields empty and click Submit."
+                    }
+                )
+            except Exception as e:
+                _LOGGER.error(f"Error fetching Overseerr users during reconfigure: {e}")
+                return self.async_abort(reason="failed_to_fetch_overseerr_users")
+        
+        # Process the form input
+        manual_mapping = user_input.get("manual_mapping")
+        overseerr_user = user_input.get("overseerr_user")
+        default_user_id = user_input.get("default_overseerr_user")
+        
+        # If both fields are empty, we're done mapping
+        if not manual_mapping and not overseerr_user:
+            # Get existing mappings from previous submissions
+            user_mappings = self.hass.data.get(DOMAIN, {}).get("user_mappings", {})
+            
             # Update the existing config entry
             data = dict(self._get_reconfigure_entry().data)
-            data.update(user_input)
+            data.update({
+                "overseerr_user_id": default_user_id,
+                "user_mappings": user_mappings
+            })
+            
             self.hass.config_entries.async_update_entry(
                 self._get_reconfigure_entry(),
                 data=data
             )
             return self.async_update_reload_and_abort(
                 self._get_reconfigure_entry(),
-                data_updates=user_input,
+                data_updates=data,
             )
-
-        # Get existing data to pre-fill the form
-        existing_data = self._get_reconfigure_entry().data
-        overseerr_url = existing_data.get("overseerr_url")
-        overseerr_api_key = existing_data.get("overseerr_api_key")
-
-        # Fetch users from Overseerr API
-        users = await self._fetch_overseerr_users(overseerr_url, overseerr_api_key)
-        user_options = {user["id"]: user["username"] for user in users}
-
-        return self.async_show_form(
-            step_id="reconfigure_overseerr_user",
-            data_schema=vol.Schema({
-                vol.Required("overseerr_user_id"): vol.In(user_options),
-            })
-        )
+        
+        # Store the mapping in Home Assistant data
+        if manual_mapping and overseerr_user:
+            # Get existing mappings
+            if DOMAIN not in self.hass.data:
+                self.hass.data[DOMAIN] = {}
+            if "user_mappings" not in self.hass.data[DOMAIN]:
+                self.hass.data[DOMAIN]["user_mappings"] = {}
+                
+            # Find user ID by name
+            users = await self.hass.auth.async_get_users()
+            for user in users:
+                user_name = self._get_simple_user_name(user, 0)
+                if manual_mapping.lower() in user_name.lower():
+                    self.hass.data[DOMAIN]["user_mappings"][str(user.id)] = overseerr_user
+                    _LOGGER.info(f"Mapped Home Assistant user '{user_name}' to Overseerr user ID {overseerr_user}")
+                    break
+            
+            # Show the form again for the next mapping
+            return await self.async_step_reconfigure_overseerr_user()
 
     async def async_step_reconfigure_radarr_sonarr(self, user_input=None):
         """Handle reconfiguration for Radarr & Sonarr."""
@@ -222,30 +291,139 @@ class HassarrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if errors:
             return self.async_show_form(step_id="overseerr", data_schema=self._get_overseerr_schema(), errors=errors)
 
-        # Save the overseerr_url and overseerr_api_key and proceed to user selection step
+        # Save the overseerr_url and overseerr_api_key and proceed directly to user mapping
         self.overseerr_url = user_input["overseerr_url"]
         self.overseerr_api_key = user_input["overseerr_api_key"]
-        return await self.async_step_overseerr_user()
+        return await self.async_step_overseerr_user_mapping()
 
-    async def async_step_overseerr_user(self, user_input=None):
+    async def async_step_overseerr_user_mapping(self, user_input=None):
+        """Handle user mapping configuration."""
         if user_input is None:
-            # Fetch users from Overseerr API
-            users = await self._fetch_overseerr_users(self.overseerr_url, self.overseerr_api_key)
-            user_options = {user["id"]: user["username"] for user in users}
-
+            # Get all Home Assistant users
+            ha_users = []
+            try:
+                users = await self.hass.auth.async_get_users()
+                
+                for i, user in enumerate(users):
+                    if user.is_active:
+                        user_label = self._get_simple_user_name(user, i)
+                        _LOGGER.debug(f"Found active user {user.id}, labeling as {user_label}")
+                        
+                        ha_users.append({
+                            "id": user.id,
+                            "name": user_label,
+                            "index": i
+                        })
+            except Exception as e:
+                _LOGGER.error(f"Error fetching Home Assistant users: {e}")
+                return self.async_abort(reason="failed_to_fetch_ha_users")
+            
+            # Get all Overseerr users
+            try:
+                overseerr_users = await self._fetch_overseerr_users(self.overseerr_url, self.overseerr_api_key)
+                if not overseerr_users:
+                    return self.async_abort(reason="no_overseerr_users_found")
+                
+                # Create options with more descriptive labels including user roles if available
+                overseerr_options = {}
+                for user in overseerr_users:
+                    username = user["username"]
+                    display_name = user.get("displayName", "")
+                    
+                    # Add display name if available
+                    if display_name and display_name != username:
+                        label = f"{username} ({display_name})"
+                    else:
+                        label = username
+                    
+                    # Add user permissions if available
+                    if user.get("permissions", 0) == 2:
+                        label += " [Admin]"
+                    
+                    overseerr_options[user["id"]] = label
+            except Exception as e:
+                _LOGGER.error(f"Error fetching Overseerr users: {e}")
+                return self.async_abort(reason="failed_to_fetch_overseerr_users")
+            
+            # Create a simple form for manual user mapping
             return self.async_show_form(
-                step_id="overseerr_user",
+                step_id="overseerr_user_mapping",
                 data_schema=vol.Schema({
-                    vol.Required("overseerr_user_id"): vol.In(user_options),
-                })
+                    vol.Optional("manual_mapping"): cv.string,
+                    vol.Optional("overseerr_user"): vol.In(overseerr_options),
+                    vol.Optional("default_overseerr_user", default=list(overseerr_options.keys())[0] if overseerr_options else None): vol.In(overseerr_options)
+                }),
+                description_placeholders={
+                    "total_ha_users": str(len(ha_users)),
+                    "total_overseerr_users": str(len(overseerr_options)),
+                    "note": "Enter Home Assistant username and select Overseerr user, then click Submit. Repeat for each user you want to map. When finished, leave the fields empty and click Submit."
+                }
             )
 
-        # Create the entry with the selected user ID
-        user_input.update({
-            "overseerr_url": self.overseerr_url,
-            "overseerr_api_key": self.overseerr_api_key
-        })
-        return self.async_create_entry(title="Hassarr", data=user_input)
+        # Process the form input
+        manual_mapping = user_input.get("manual_mapping")
+        overseerr_user = user_input.get("overseerr_user")
+        default_user_id = user_input.get("default_overseerr_user")
+        
+        # If both fields are empty, we're done mapping
+        if not manual_mapping and not overseerr_user:
+            # Get existing mappings from previous submissions
+            user_mappings = self.hass.data.get(DOMAIN, {}).get("user_mappings", {})
+            
+            # Create the entry with all the data
+            user_input.update({
+                "overseerr_url": self.overseerr_url,
+                "overseerr_api_key": self.overseerr_api_key,
+                "overseerr_user_id": default_user_id,
+                "user_mappings": user_mappings
+            })
+            
+            return self.async_create_entry(title="Hassarr", data=user_input)
+        
+        # Store the mapping in Home Assistant data
+        if manual_mapping and overseerr_user:
+            # Get existing mappings
+            if DOMAIN not in self.hass.data:
+                self.hass.data[DOMAIN] = {}
+            if "user_mappings" not in self.hass.data[DOMAIN]:
+                self.hass.data[DOMAIN]["user_mappings"] = {}
+                
+            # Find user ID by name
+            users = await self.hass.auth.async_get_users()
+            for user in users:
+                user_name = self._get_simple_user_name(user, 0)
+                if manual_mapping.lower() in user_name.lower():
+                    self.hass.data[DOMAIN]["user_mappings"][str(user.id)] = overseerr_user
+                    _LOGGER.info(f"Mapped Home Assistant user '{user_name}' to Overseerr user ID {overseerr_user}")
+                    break
+            
+            # Show the form again for the next mapping
+            return await self.async_step_overseerr_user_mapping()
+
+    def _get_simple_user_name(self, user, index):
+        """Get a simple, readable name for a Home Assistant user."""
+        try:
+            # Try different property names that might exist
+            if hasattr(user, 'name') and user.name:
+                return user.name
+            elif hasattr(user, 'display_name') and user.display_name:
+                return user.display_name
+            elif hasattr(user, 'username') and user.username:
+                return user.username
+            elif hasattr(user, 'email') and user.email:
+                # Use email as fallback
+                return user.email.split('@')[0]  # Just the username part
+            else:
+                # Last resort: shortened ID
+                user_id = str(user.id)
+                short_id = user_id[-8:] if len(user_id) > 8 else user_id
+                return f"User {index + 1} ({short_id})"
+        except Exception as e:
+            _LOGGER.warning(f"Error getting friendly name for user {user.id}: {e}")
+            # Fallback to shortened ID
+            user_id = str(user.id)
+            short_id = user_id[-8:] if len(user_id) > 8 else user_id
+            return f"User {index + 1} ({short_id})"
 
     async def _fetch_overseerr_users(self, url, api_key):
         """Fetch users from the Overseerr API."""
@@ -280,3 +458,4 @@ class HassarrConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required("overseerr_url", description={"placeholder": "http://192.168.1.100:5055"}): str,
             vol.Required("overseerr_api_key", description={"placeholder": "Your Overseerr API Key"}): str
         })
+

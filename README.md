@@ -24,6 +24,8 @@ Hassarr is a Home Assistant integration that connects your media management serv
 
 - **🤖 LLM-First Design**: Built for natural language interactions with ChatGPT, Claude, and other LLMs.
 - **📱 Smart Media Management**: Add, remove, and track movies/TV shows.
+- **📺 Intelligent Season Requests**: Natural language season support - "add season two", "remaining seasons", "next season".
+- **🧠 Smart Suggestions**: Automatically suggests missing seasons when adding existing TV shows.
 - **📊 Real-time Monitoring**: Live sensors for downloads, queue status, and system health.
 - **🔄 Automatic Updates**: Background sync with your media services.
 - **🛠️ Easy Setup**: Simple configuration flow.
@@ -54,7 +56,15 @@ Hassarr is a Home Assistant integration that connects your media management serv
     *   Choose "Overseerr" as the integration type during setup.
     *   Enter your Overseerr URL (e.g., `http://192.168.1.100:5055`).
     *   Enter your API key.
-    *   Select a user for making requests.
+    *   **User Mapping**: Map each Home Assistant user to their corresponding Overseerr user account.
+3.  **User Mapping Interface**
+    *   **Automatic Detection**: The integration automatically detects all active Home Assistant users and Overseerr users.
+    *   **Friendly Names**: Home Assistant users are displayed with their friendly names (name, username, or shortened ID).
+    *   **Simple Mapping**: For each Home Assistant user, select which Overseerr user account they should use.
+    *   **Clear Descriptions**: Each field is clearly labeled with the user's friendly name for easy identification.
+    *   **Automatic Default**: The first mapped user is automatically set as the default for system operations.
+    *   **Error Handling**: If Overseerr is unreachable or has no users, clear error messages guide you to fix the issue.
+    *   **Reconfiguration**: You can update user mappings later through the integration's configure option.
 
 ### Radarr & Sonarr Setup
 
@@ -68,6 +78,43 @@ Hassarr is a Home Assistant integration that connects your media management serv
     *   Choose "Radarr & Sonarr" as the integration type.
     *   Enter the URLs and API keys for both services.
     *   Select the desired quality profiles for each service.
+
+---
+
+## User Permissions & Access Control
+
+Hassarr implements a user mapping system to control who can make media requests:
+
+### **User Mapping System**
+- **Setup**: During integration configuration, you map each Home Assistant user to an Overseerr user
+- **Default User**: One Overseerr user is selected as the default for the integration
+- **Access Control**: Only mapped users can perform write operations
+- **Simple Mapping**: Enter a Home Assistant username and select the corresponding Overseerr user
+- **Multiple Mappings**: Add one mapping at a time until all needed users are mapped
+- **Flexible Configuration**: When finished adding mappings, leave both fields empty and click Submit
+
+### **Operation Permissions**
+
+| Operation | Mapped Users | Unmapped Users | Description |
+|-----------|-------------|----------------|-------------|
+| **Add Media** | ✅ Allowed | ❌ Blocked | Add movies/TV shows to Overseerr |
+| **Remove Media** | ✅ Allowed | ❌ Blocked | Remove media from library |
+| **Run Jobs** | ✅ Allowed | ❌ Blocked | Trigger maintenance jobs |
+| **Search Media** | ✅ Allowed | ✅ Allowed | Search for movies/TV shows |
+| **Check Status** | ✅ Allowed | ✅ Allowed | Check media download status |
+| **View Requests** | ✅ Allowed | ✅ Allowed | View active downloads |
+
+### **Error Messages**
+When an unmapped user tries to perform a restricted operation, they'll receive a clear error message:
+> "Sorry [username], you're not registered to make media requests through this system. Contact your system administrator to add your account to the media request system."
+
+### **Managing User Access**
+To add or modify user mappings:
+1. Go to **Settings > Devices & Services > Hassarr**
+2. Click **Configure** on the Hassarr integration
+3. Navigate to the **User Mapping** section
+4. Enter Home Assistant usernames and select corresponding Overseerr users
+5. Save the configuration
 
 ---
 
@@ -172,6 +219,58 @@ Here are a few examples of how you can interact with your chat assistant once Ha
 
 *Self-Correction and Follow-ups:* Notice how the assistant offers a natural next step. This "suggested prompt" comes directly from the rich JSON response provided by Hassarr. The LLM is able to guide the conversation based on the context of the action just performed.
 
+#### Adding Specific TV Show Seasons
+**User:** "Add season 3 of Stranger Things"
+
+**Ollama:** "I'll add season 3 of Stranger Things to your library."
+*[Calls `script.hassarr_add_media` with `title: "Stranger Things"` and `season: 3`]*
+
+**Ollama:** "Perfect! I've successfully added Stranger Things season 3 to your Overseerr library. The request is now pending approval. Season 3 specifically has been requested as you asked."
+
+**User:** "Add Breaking Bad"
+
+**Ollama:** "I'll add Breaking Bad to your library."
+*[Calls `script.hassarr_add_media` with `title: "Breaking Bad"`]*
+
+**Ollama:** "Great! I've successfully added Breaking Bad to your Overseerr library. Since you didn't specify a season, I defaulted to season 1. The request is now pending approval."
+
+#### Natural Language Season Requests
+**User:** "Add season two of The Office"
+
+**Ollama:** "I'll add season 2 of The Office to your library."
+*[Calls `script.hassarr_add_media` with `title: "The Office"` and `season: "season two"`]*
+
+**Ollama:** "Perfect! I've successfully added The Office season 2 to your Overseerr library. The request is now pending approval."
+
+**User:** "Add the remaining seasons of Game of Thrones"
+
+**Ollama:** "Let me check what seasons you already have and add the missing ones."
+*[Calls `script.hassarr_add_media` with `title: "Game of Thrones"` and `season: "remaining seasons"`]*
+
+**Ollama:** "You already have Game of Thrones in your library! Seasons 1-3 are available, season 4 is downloading. I can add seasons 5-8 if you'd like. Should I request the remaining 4 seasons?"
+
+**User:** "Add seasons 1 to 5 of Breaking Bad"
+
+**Ollama:** "I'll add seasons 1 through 5 of Breaking Bad to your library."
+*[Calls `script.hassarr_add_media` with `title: "Breaking Bad"` and `season: "seasons 1 to 5"`]*
+
+**Ollama:** "Perfect! I've successfully added Breaking Bad seasons 1, 2, 3, 4, 5 to your Overseerr library. The request is now pending approval."
+
+**User:** "Add seasons 1, 3, and 5 of The Office"
+
+**Ollama:** "I'll add seasons 1, 3, and 5 of The Office to your library."
+*[Calls `script.hassarr_add_media` with `title: "The Office"` and `season: "1, 3, 5"`]*
+
+**Ollama:** "Great! I've successfully added The Office seasons 1, 3, 5 to your Overseerr library. The request is now pending approval."
+
+#### Smart Suggestions for Existing Shows
+**User:** "Add Two and a Half Men"
+
+**Ollama:** "I'll add Two and a Half Men to your library."
+*[Calls `script.hassarr_add_media` with `title: "Two and a Half Men"`]*
+
+**Ollama:** "Two and a Half Men already exists in your Overseerr library! Season 1 is currently downloading. The show has 12 total seasons. Would you like me to add the remaining seasons (2-12)?"
+
 #### Checking Active Downloads
 **User:** "What's currently downloading?"
 
@@ -187,6 +286,14 @@ Here are a few examples of how you can interact with your chat assistant once Ha
 *[Calls `script.hassarr_check_media_status` with `title: "The Godfather"`]*
 
 **Ollama:** "The Godfather is currently downloading. It is 75% complete and should be available in about 15 minutes. It was requested by John."
+
+#### Enhanced Season Information for TV Shows
+**User:** "What's the status of Two and a Half Men?"
+
+**Ollama:** "Let me check the status for you."
+*[Calls `script.hassarr_check_media_status` with `title: "Two and a Half Men"`]*
+
+**Ollama:** "Two and a Half Men has Season 2 currently downloading. I can see 10 episodes are actively downloading, including Episode 24 'Does This Smell Funny to You?' which is 75% complete. The season should be ready in about 21 hours. This was requested by the homeassistant user. The show has 12 total seasons, with seasons 1, 3-12 not yet requested. Would you like me to add the remaining seasons?"
 
 ---
 
@@ -250,20 +357,19 @@ automation:
 
 *   **The Script Workaround**: You might wonder why we need to use scripts instead of calling the services directly from the LLM. This is due to a current limitation in Home Assistant: conversation agents **cannot directly call services**. They can only interact with **entities**. By wrapping our services in simple scripts, we create `script` entities that *can* be exposed to assistants like Ollama. This is an elegant and effective workaround that unlocks the full power of the integration for voice and chat control. The Extended OpenAI integration has its own method for handling this using function calls, which may be explored in a future update.
 
-*   **TV Show Requests**: Currently, when requesting a TV show, the entire series is requested by default. There is no support for requesting specific seasons.
-
 ---
 
 ## Future Enhancements
 
 Here is a list of planned improvements for the integration:
 
+*   **Enhanced Natural Language Processing**: Expand season parsing to handle more complex requests like "seasons 3-5", "odd numbered seasons", or "final season".
+*   **Bulk Season Operations**: Allow requesting multiple non-consecutive seasons in a single command.
 *   **Radarr/Sonarr Feature Parity**: Update the direct Radarr/Sonarr mode to have the same rich service calls and sensor support as the Overseerr/Jellyseerr mode.
 *   **Smarter Status Checks**: Enhance the `check_media_status` service to query Radarr/Sonarr directly if a movie is not found or is stuck in a non-downloading state in Overseerr.
 *   **Availability Sync**: Improve the status check to poll Radarr/Sonarr directly if a request is 100% downloaded in the client but not yet marked as "Available" in Overseerr.
 *   **Post-Action Sync**: Add a post-action hook to the `add_media` and `remove_media` services to automatically trigger the media availability and download sync jobs in Overseerr, ensuring the UI reflects changes almost instantly.
 *   **Quality Profile & 4K Support**: Add support for specifying quality profiles (e.g., "in 1080p", "in highest quality") and making 4K requests directly in the service call.
-*   **Specific Season Requests**: Allow users to request specific seasons of a TV show instead of the entire series.
 
 ---
 
@@ -274,6 +380,39 @@ This project was originally forked from [TegridyTate/Hassarr](https://github.com
 ---
 
 ## Troubleshooting
+
+### LLM Parameter Parsing Issues
+
+If you notice searches like `query=two%20and%20a%20half%20men%20season%202` in your logs instead of just the show name, it means your LLM isn't separating the title and season parameters properly. This is completely normal and expected behavior!
+
+**What's happening:**
+- You say: "add season 2 of Two and a Half Men"
+- LLM passes: `title: "season 2 of Two and a Half Men"` and `season: ""`
+- Hassarr automatically parses this to extract: `title: "Two and a Half Men"` and `season: 2`
+
+**To verify this is working:**
+1. Check your Home Assistant logs for a message like: `Extracted season 2 from title 'season 2 of Two and a Half Men' -> cleaned title: 'Two and a Half Men'`
+2. The subsequent search should be for just the show name: `query=two%20and%20a%20half%20men`
+
+**Enhanced Season Information:**
+The system now provides rich season details in responses:
+- **Specific requested seasons**: Shows exactly which seasons were requested (e.g., "Season 2")
+- **Multiple season requests**: Support for ranges ("seasons 1 to 5"), multiple seasons ("1, 2, 3"), and "all seasons"
+- **Total seasons available**: Shows how many seasons the show has in total
+- **Missing seasons**: Lists seasons that haven't been requested yet
+- **Episode-level download info**: Includes individual episode titles, progress, and air dates
+- **Season status breakdown**: Available, downloading, or pending for each season
+- **Smart suggestions**: Automatically suggests missing seasons when appropriate
+
+**If parsing isn't working:**
+1. Make sure you're using the updated integration code with title parsing
+2. Restart Home Assistant after updating
+3. Check the logs for any parsing errors
+
+**What you'll see in enhanced responses:**
+- "Season 2 is downloading (Episode 24: Does This Smell Funny to You?, 75% complete)"
+- "Seasons 1-3 available, Season 4 downloading"
+- "Would you like me to add the remaining seasons (5-12)?"
 
 ### Debug Logging
 

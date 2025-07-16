@@ -41,6 +41,43 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     
     _LOGGER.info("Registering basic test service...")
     
+    def _get_user_friendly_name(user):
+        """Get a friendly name for a Home Assistant user."""
+        try:
+            # Try different property names that might exist
+            if hasattr(user, 'name') and user.name:
+                name = user.name
+            elif hasattr(user, 'display_name') and user.display_name:
+                name = user.display_name
+            elif hasattr(user, 'username') and user.username:
+                name = user.username
+            elif hasattr(user, 'email') and user.email:
+                # Use email as fallback
+                name = user.email.split('@')[0]  # Just the username part
+            else:
+                # Last resort: shortened ID
+                user_id = str(user.id)
+                short_id = user_id[-8:] if len(user_id) > 8 else user_id
+                name = f"User {short_id}"
+            
+            # Add role suffix if applicable
+            is_owner = user.is_owner if hasattr(user, 'is_owner') else False
+            is_admin = user.is_admin if hasattr(user, 'is_admin') else False
+            
+            if is_owner:
+                return f"{name} (Owner)"
+            elif is_admin:
+                return f"{name} (Admin)"
+            else:
+                return name
+                
+        except Exception as e:
+            _LOGGER.warning(f"Error getting friendly name for user {user.id}: {e}")
+            # Fallback to shortened ID
+            user_id = str(user.id)
+            short_id = user_id[-8:] if len(user_id) > 8 else user_id
+            return f"User {short_id}"
+
     async def _get_user_context(call: ServiceCall) -> dict:
         """Get user context from service call."""
         user_context = {
@@ -54,11 +91,120 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             if user:
                 user_context.update({
                     "is_admin": user.is_admin,
-                    "username": user.name or "Unknown User",
+                    "username": _get_user_friendly_name(user),
                     "is_active": user.is_active
                 })
         
         return user_context
+    
+    def _parse_title_for_season_info(title: str) -> dict:
+        """Parse title to extract season information if included in the title text.
+        This is a fallback for when the LLM doesn't separate parameters properly."""
+        import re
+        
+        original_title = title.strip()
+        cleaned_title = original_title
+        extracted_season = None
+        
+        # Only do basic parsing as a fallback - LLM should handle this properly
+        # Common patterns for season in titles
+        patterns = [
+            # "season X of TITLE" or "season X from TITLE"
+            r'^season\s+(\d+)\s+(?:of|from)\s+(.+)$',
+            # "TITLE season X"
+            r'^(.+?)\s+season\s+(\d+)$',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, original_title, re.IGNORECASE)
+            if match:
+                groups = match.groups()
+                if len(groups) == 2:
+                    # Check which group is the season number and which is the title
+                    if groups[0].isdigit():
+                        extracted_season = int(groups[0])
+                        cleaned_title = groups[1].strip()
+                    else:
+                        cleaned_title = groups[0].strip()
+                        extracted_season = int(groups[1])
+                    break
+        
+        return {
+            "original_title": original_title,
+            "cleaned_title": cleaned_title,
+            "extracted_season": extracted_season,
+            "season_found_in_title": extracted_season is not None,
+            "parsing_method": "title_parsing" if extracted_season is not None else "no_season_detected"
+        }
+    
+    def _parse_season_request(season_input, season_analysis: dict = None) -> dict:
+        """Parse natural language season requests.
+        LLM should provide clean parameters, but we handle common cases as fallback."""
+        if not season_input:
+            return {"seasons": None, "type": "default"}
+        
+        season_str = str(season_input).lower().strip()
+        
+        # Handle explicit numbers (most common case)
+        if season_str.isdigit():
+            return {"seasons": [int(season_str)], "type": "explicit"}
+        
+        # Handle word numbers ("season two", "season three")
+        word_to_num = {
+            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
+        }
+        
+        for word, num in word_to_num.items():
+            if word in season_str:
+                return {"seasons": [num], "type": "word_number"}
+        
+        # Handle "all seasons" (request entire series)
+        if any(term in season_str for term in ["all", "every", "complete"]):
+            if season_analysis:
+                all_seasons = season_analysis.get("all_seasons", [])
+                return {"seasons": all_seasons, "type": "all"} if all_seasons else {"seasons": None, "type": "all_unknown"}
+            return {"seasons": None, "type": "all_unknown"}
+        
+        # Handle range requests like "seasons 1 to 5" or "seasons 1-5"
+        range_patterns = [
+            r'seasons?\s+(\d+)\s+(?:to|-)\s+(\d+)',  # "seasons 1 to 5" or "seasons 1-5"
+            r'(\d+)\s+(?:to|-)\s+(\d+)',  # "1 to 5" or "1-5"
+        ]
+        
+        for pattern in range_patterns:
+            match = re.search(pattern, season_str)
+            if match:
+                start = int(match.group(1))
+                end = int(match.group(2))
+                if start <= end:
+                    seasons = list(range(start, end + 1))
+                    return {"seasons": seasons, "type": "range"}
+        
+        # Handle "remaining seasons" (if we have season analysis)
+        if any(term in season_str for term in ["remaining", "missing", "rest", "other"]) and season_analysis:
+            missing = season_analysis.get("missing_seasons", [])
+            return {"seasons": missing, "type": "remaining"} if missing else {"seasons": None, "type": "none_missing"}
+        
+        # Handle multiple specific seasons like "seasons 1, 2, and 3" or "seasons 1 2 3"
+        # First try comma-separated
+        comma_numbers = re.findall(r'(\d+)(?:\s*,\s*(\d+))*', season_str)
+        if comma_numbers:
+            seasons = []
+            for match in comma_numbers:
+                for group in match:
+                    if group:
+                        seasons.append(int(group))
+            if seasons:
+                return {"seasons": seasons, "type": "multiple"}
+        
+        # Fallback - try to extract any numbers
+        import re
+        numbers = re.findall(r'\d+', season_str)
+        if numbers:
+            return {"seasons": [int(num) for num in numbers], "type": "extracted"}
+        
+        return {"seasons": None, "type": "unparseable"}
     
     async def handle_test_connection_service(call: ServiceCall) -> dict:
         """Test the Overseerr connection."""
@@ -115,6 +261,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 hass.data[DOMAIN]["last_status_check"] = result
                 return result
             
+            # Check if user is mapped (for read-only operations, we can be more lenient)
+            user_mappings = hass.data[DOMAIN].get("user_mappings", {})
+            calling_user_id = user_context.get("user_id")
+            
+            if calling_user_id and calling_user_id not in user_mappings:
+                # For status checks, we can allow unmapped users but log it
+                _LOGGER.info(f"Unmapped user {user_context['username']} checking media status - allowing read-only access")
+            
             _LOGGER.info(f"Checking media status for: {title} (called by {user_context['username']})")
             api = hass.data[DOMAIN]["api"]
             
@@ -136,8 +290,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 hass.data[DOMAIN]["last_status_check"] = result
                 return result
             
-            # Get the first result (most relevant)
+            # Get the first result (most relevant) with bounds checking
             first_result = results[0]
+            _LOGGER.debug(f"Found search result for '{title}': {first_result.get('title') or first_result.get('name', 'Unknown')}")
             
             # Get additional media details
             media_details = None
@@ -146,24 +301,33 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 tmdb_id = first_result.get("id")
                 if tmdb_id:
                     media_details = await api.get_media_details(media_type, tmdb_id)
+                    _LOGGER.debug(f"Retrieved media details for TMDB ID {tmdb_id}")
             except Exception as e:
-                _LOGGER.warning(f"Failed to get media details: {e}")
+                _LOGGER.warning(f"Failed to get media details for '{title}': {e}")
             
             # Get current requests to check status
             requests_data = None
             try:
                 requests_data = await api.get_requests()
+                _LOGGER.debug(f"Retrieved requests data: {len(requests_data.get('results', []))} requests")
             except Exception as e:
                 _LOGGER.warning(f"Failed to get requests data: {e}")
             
             # Build structured LLM response
-            result = LLMResponseBuilder.build_status_response(
-                "found_media",
-                title=title,
-                search_result=first_result,
-                media_details=media_details,
-                requests_data=requests_data
-            )
+            try:
+                result = LLMResponseBuilder.build_status_response(
+                    "found_media",
+                    title=title,
+                    search_result=first_result,
+                    media_details=media_details,
+                    requests_data=requests_data
+                )
+            except Exception as e:
+                _LOGGER.error(f"Error building status response for '{title}': {e}")
+                result = LLMResponseBuilder.build_status_response("connection_error", title, error_details=f"Error processing response: {e}")
+                result["user_context"] = user_context
+                hass.data[DOMAIN]["last_status_check"] = result
+                return result
             
             result["user_context"] = user_context
             hass.data[DOMAIN]["last_status_check"] = result
@@ -181,23 +345,25 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         """Add media to Overseerr with LLM-optimized response."""
         try:
             title = call.data.get("title", "").strip()
+            season_input = call.data.get("season")  # Optional season parameter
             user_context = await _get_user_context(call)
             
             if not title:
-                result = LLMResponseBuilder.build_add_media_response("missing_title")
+                result = await LLMResponseBuilder.build_add_media_response("missing_title")
                 result["user_context"] = user_context
                 hass.data[DOMAIN]["last_add_media"] = result
                 return result
-            
-            _LOGGER.info(f"Adding media to Overseerr: {title} (called by {user_context['username']})")
+
+            season_info = f" (season: {season_input})" if season_input is not None else ""
+            _LOGGER.info(f"Adding media to Overseerr: {title}{season_info} (called by {user_context['username']})")
             api = hass.data[DOMAIN]["api"]
             
-            # Search for the media
+            # Search for the media first to get media type and tmdb_id
             search_data = await api.search_media(title)
             if not search_data:
                 # Get detailed error from API if available
                 error_details = api.last_error if api.last_error else "Failed to get response from Overseerr search API"
-                result = LLMResponseBuilder.build_add_media_response("connection_error", title, error_details=error_details)
+                result = await LLMResponseBuilder.build_add_media_response("connection_error", title, error_details=error_details)
                 result["user_context"] = user_context
                 hass.data[DOMAIN]["last_add_media"] = result
                 return result
@@ -205,7 +371,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             # Check if any results found
             results = search_data.get("results", [])
             if not results:
-                result = LLMResponseBuilder.build_add_media_response("not_found", title)
+                result = await LLMResponseBuilder.build_add_media_response("not_found", title)
                 result["user_context"] = user_context
                 hass.data[DOMAIN]["last_add_media"] = result
                 return result
@@ -215,31 +381,172 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             media_type = first_result.get("mediaType", "movie")
             tmdb_id = first_result.get("id")
             
+            # For TV shows, perform season analysis before parsing season input
+            season_analysis = None
+            if media_type == "tv" and season_input is not None:
+                try:
+                    season_analysis = await api.get_tv_season_analysis(tmdb_id)
+                except Exception as e:
+                    _LOGGER.warning(f"Failed to get season analysis: {e}")
+            
+            # Parse season input using natural language processing
+            season_parse_result = _parse_season_request(season_input, season_analysis)
+            requested_seasons = season_parse_result.get("seasons")
+            parse_type = season_parse_result.get("type")
+            
+            # Handle different season request types
+            season = None
+            seasons_list = None
+            
+            if parse_type == "all":
+                # "All seasons" - use all available seasons
+                if requested_seasons:
+                    seasons_list = requested_seasons
+                    _LOGGER.info(f"Parsed season request '{season_input}' -> requesting all seasons: {requested_seasons}")
+                else:
+                    seasons_list = None  # Fallback to API default
+                    _LOGGER.info(f"Parsed season request '{season_input}' -> requesting entire series (API default)")
+            elif requested_seasons:
+                # Multiple seasons requested
+                if len(requested_seasons) > 1:
+                    seasons_list = requested_seasons
+                    _LOGGER.info(f"Parsed season request '{season_input}' -> requesting multiple seasons: {requested_seasons}")
+                else:
+                    # Single season
+                    season = requested_seasons[0]
+                    seasons_list = [season]
+                    _LOGGER.info(f"Parsed season request '{season_input}' -> requesting season {season}")
+                
+                # Validate seasons
+                try:
+                    valid_seasons = []
+                    for s in requested_seasons:
+                        season_int = int(s)
+                        if season_int >= 1:
+                            valid_seasons.append(season_int)
+                        else:
+                            _LOGGER.warning(f"Invalid season number: {s}, skipping")
+                    
+                    if valid_seasons:
+                        seasons_list = valid_seasons
+                        if len(valid_seasons) == 1:
+                            season = valid_seasons[0]
+                    else:
+                        # No valid seasons, default to season 1
+                        season = 1
+                        seasons_list = [1]
+                        _LOGGER.warning(f"No valid seasons found, defaulting to season 1")
+                        
+                except (ValueError, TypeError) as e:
+                    _LOGGER.warning(f"Error validating seasons: {e}, defaulting to season 1")
+                    season = 1
+                    seasons_list = [1]
+            else:
+                # No season specified - default to season 1
+                season = 1
+                seasons_list = [1]
+                _LOGGER.info(f"No season specified, defaulting to season 1")
+            
             # Check if already exists in Overseerr
             if first_result.get("mediaInfo"):
-                # Media already exists, get details and return
-                media_details = None
-                try:
-                    if tmdb_id:
-                        media_details = await api.get_media_details(media_type, tmdb_id)
-                except Exception as e:
-                    _LOGGER.warning(f"Failed to get media details: {e}")
+                # For TV shows, check if the specific season is already requested
+                if media_type == "tv" and season is not None:
+                    try:
+                        # Get season analysis to check if this specific season is already requested
+                        season_analysis = await api.get_tv_season_analysis(tmdb_id)
+                        if season_analysis:
+                            requested_seasons = season_analysis.get("requested_seasons", [])
+                            if season in requested_seasons:
+                                # This specific season is already requested
+                                _LOGGER.info(f"Season {season} of '{title}' is already requested in Overseerr")
+                                media_details = None
+                                try:
+                                    if tmdb_id:
+                                        media_details = await api.get_media_details(media_type, tmdb_id)
+                                except Exception as e:
+                                    _LOGGER.warning(f"Failed to get media details: {e}")
+                                
+                                result = await LLMResponseBuilder.build_add_media_response(
+                                    "media_already_exists",
+                                    title=title,
+                                    search_result=first_result,
+                                    media_details=media_details,
+                                    season=season,
+                                    season_analysis=season_analysis,
+                                    api=api
+                                )
+                                result["user_context"] = user_context
+                                hass.data[DOMAIN]["last_add_media"] = result
+                                return result
+                            else:
+                                # Season is not requested yet, proceed with the request
+                                _LOGGER.info(f"Season {season} of '{title}' is not yet requested, proceeding with request")
+                    except Exception as e:
+                        _LOGGER.warning(f"Failed to check season analysis for '{title}': {e}")
+                        # If we can't check season analysis, proceed with the request anyway
                 
-                result = LLMResponseBuilder.build_add_media_response(
-                    "media_already_exists",
+                # For movies or if no specific season requested, check if media exists
+                elif media_type == "movie" or season is None:
+                    # Media already exists, get details and return
+                    media_details = None
+                    season_analysis = None
+                    
+                    try:
+                        if tmdb_id:
+                            media_details = await api.get_media_details(media_type, tmdb_id)
+                            
+                            # For TV shows, perform season analysis to provide intelligent suggestions
+                            if media_type == "tv":
+                                season_analysis = await api.get_tv_season_analysis(tmdb_id)
+                                _LOGGER.debug(f"Season analysis for '{title}': {season_analysis}")
+                            
+                    except Exception as e:
+                        _LOGGER.warning(f"Failed to get media details or season analysis: {e}")
+                    
+                    result = await LLMResponseBuilder.build_add_media_response(
+                        "media_already_exists",
+                        title=title,
+                        search_result=first_result,
+                        media_details=media_details,
+                        season=season,
+                        season_analysis=season_analysis,
+                        api=api
+                    )
+                    result["user_context"] = user_context
+                    hass.data[DOMAIN]["last_add_media"] = result
+                    _LOGGER.info(f"Media '{title}' already exists in Overseerr")
+                    return result
+            
+            # Media doesn't exist, so add it
+            # Get the appropriate Overseerr user ID for this Home Assistant user
+            user_mappings = hass.data[DOMAIN].get("user_mappings", {})
+            calling_user_id = user_context.get("user_id")
+            
+            if calling_user_id and calling_user_id in user_mappings:
+                overseerr_user_id = user_mappings[calling_user_id]
+                _LOGGER.info(f"User {user_context['username']} mapped to Overseerr user ID {overseerr_user_id}")
+            else:
+                # No mapping found - return error response
+                result = await LLMResponseBuilder.build_add_media_response(
+                    "user_not_mapped",
                     title=title,
-                    search_result=first_result,
-                    media_details=media_details
+                    error_details=f"User {user_context.get('username')} is not mapped to any Overseerr user"
                 )
                 result["user_context"] = user_context
                 hass.data[DOMAIN]["last_add_media"] = result
-                _LOGGER.info(f"Media '{title}' already exists in Overseerr")
+                _LOGGER.warning(f"User {user_context['username']} (ID: {calling_user_id}) is not mapped to any Overseerr user")
                 return result
             
-            # Media doesn't exist, so add it
-            # Use the configured user_id for requests, but track who actually called it
-            overseerr_user_id = hass.data[DOMAIN].get("overseerr_user_id")
-            add_result = await api.add_media_request(media_type, tmdb_id, overseerr_user_id)
+            # Prepare seasons list for TV shows (seasons_list is already set above)
+            if media_type == "tv":
+                if seasons_list is not None:
+                    _LOGGER.debug(f"Requesting seasons {seasons_list} for TV show '{title}'")
+                else:
+                    _LOGGER.debug(f"Requesting entire series (all seasons) for TV show '{title}'")
+            else:
+                _LOGGER.debug(f"Adding movie '{title}' (seasons parameter not applicable)")
+            
+            add_result = await api.add_media_request(media_type, tmdb_id, overseerr_user_id, seasons_list)
             
             if add_result:
                 # Successfully added, get details for response
@@ -250,28 +557,54 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 except Exception as e:
                     _LOGGER.warning(f"Failed to get media details: {e}")
                 
-                result = LLMResponseBuilder.build_add_media_response(
+                # Check if we requested specific seasons but may have fallen back to entire series
+                actual_season = season
+                fallback_message = ""
+                
+                # If we requested a specific season but the API had to fall back to entire series
+                if media_type == "tv" and season is not None and api.last_error and "500" in str(api.last_error):
+                    fallback_message = f" (Note: Season {season} request failed, so the entire series was requested instead)"
+                    actual_season = None  # Indicate that entire series was requested
+                
+                result = await LLMResponseBuilder.build_add_media_response(
                     "media_added_successfully",
                     title=title,
                     search_result=first_result,
                     media_details=media_details,
-                    add_result=add_result
+                    add_result=add_result,
+                    season=actual_season,
+                    parse_type=parse_type,
+                    seasons_list=seasons_list
                 )
+                
+                # Add fallback information if needed
+                if fallback_message:
+                    result["fallback_info"] = {
+                        "original_season_request": season,
+                        "actual_request": "entire_series",
+                        "reason": "Season-specific request failed on server"
+                    }
+                    result["message"] = result["message"] + fallback_message
+                
                 result["user_context"] = user_context
                 hass.data[DOMAIN]["last_add_media"] = result
-                _LOGGER.info(f"Successfully added '{title}' to Overseerr")
+                _LOGGER.info(f"Successfully added '{title}'{season_info} to Overseerr{fallback_message}")
                 return result
             else:
-                # Failed to add
-                result = LLMResponseBuilder.build_add_media_response("media_add_failed", title, error_details="API request returned empty result")
+                # Failed to add - get detailed error from API
+                error_details = api.last_error if api.last_error else "API request returned empty result"
+                result = await LLMResponseBuilder.build_add_media_response("media_add_failed", title, error_details=error_details, season=season)
                 result["user_context"] = user_context
                 hass.data[DOMAIN]["last_add_media"] = result
-                _LOGGER.error(f"Failed to add '{title}' to Overseerr")
+                _LOGGER.error(f"Failed to add '{title}' to Overseerr: {error_details}")
                 return result
             
         except Exception as e:
             _LOGGER.error(f"Error adding media: {e}")
-            result = LLMResponseBuilder.build_add_media_response("connection_error", title, error_details=str(e))
+            # Get detailed error from API if available, otherwise use exception
+            api = hass.data[DOMAIN].get("api")
+            error_details = api.last_error if api and api.last_error else str(e)
+            result = await LLMResponseBuilder.build_add_media_response("connection_error", title, error_details=error_details, season=season)
             result["user_context"] = await _get_user_context(call)
             hass.data[DOMAIN]["last_add_media"] = result
             return result
@@ -287,6 +620,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 result["user_context"] = user_context
                 hass.data[DOMAIN]["last_search"] = result
                 return result
+            
+            # Check if user is mapped (for read-only operations, we can be more lenient)
+            user_mappings = hass.data[DOMAIN].get("user_mappings", {})
+            calling_user_id = user_context.get("user_id")
+            
+            if calling_user_id and calling_user_id not in user_mappings:
+                # For searches, we can allow unmapped users but log it
+                _LOGGER.info(f"Unmapped user {user_context['username']} searching media - allowing read-only access")
             
             _LOGGER.info(f"Searching for media: {query} (called by {user_context['username']})")
             api = hass.data[DOMAIN]["api"]
@@ -338,6 +679,23 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 return result
             
             _LOGGER.info(f"Remove media request (called by {user_context['username']}): title='{title}', media_id='{media_id}'")
+            
+            # Check if user is mapped (required for removal operations)
+            user_mappings = hass.data[DOMAIN].get("user_mappings", {})
+            calling_user_id = user_context.get("user_id")
+            
+            if calling_user_id and calling_user_id not in user_mappings:
+                # No mapping found - return error response
+                result = LLMResponseBuilder.build_remove_media_response(
+                    "user_not_mapped",
+                    title=title,
+                    error_details=f"User {user_context.get('username')} is not mapped to any Overseerr user"
+                )
+                result["user_context"] = user_context
+                hass.data[DOMAIN]["last_remove_media"] = result
+                _LOGGER.warning(f"User {user_context['username']} (ID: {calling_user_id}) is not mapped to any Overseerr user")
+                return result
+            
             api = hass.data[DOMAIN]["api"]
             search_result = None
             
@@ -481,6 +839,22 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         try:
             _LOGGER.info(f"Running job {job_id} (called by {user_context['username']})")
             
+            # Check if user is mapped (required for job operations)
+            user_mappings = hass.data[DOMAIN].get("user_mappings", {})
+            calling_user_id = user_context.get("user_id")
+            
+            if calling_user_id and calling_user_id not in user_mappings:
+                # No mapping found - return error response
+                result = LLMResponseBuilder.build_run_job_response(
+                    "user_not_mapped",
+                    job_id=job_id,
+                    error_details=f"User {user_context.get('username')} is not mapped to any Overseerr user"
+                )
+                result["user_context"] = user_context
+                hass.data[DOMAIN]["last_run_job"] = result
+                _LOGGER.warning(f"User {user_context['username']} (ID: {calling_user_id}) is not mapped to any Overseerr user")
+                return result
+            
             # Use the existing API client
             api = hass.data[DOMAIN]["api"]
             
@@ -590,6 +964,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         handle_add_media_service, 
         schema=vol.Schema({
             vol.Required("title"): str,
+            vol.Optional("season"): vol.Any(int, str),
         }),
         supports_response=True
     )

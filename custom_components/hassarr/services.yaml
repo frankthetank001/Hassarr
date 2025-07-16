@@ -20,12 +20,18 @@ check_media_status:
     optional: true
 
 add_media:
-  description: "Add movie or TV show to Overseerr with LLM-optimized response (auto-detects type)"
+  description: "Add movie or TV show to Overseerr with LLM-optimized response (auto-detects type, supports season selection for TV shows)"
   fields:
     title:
       description: "Movie or TV show title to search for and add"
       required: true
       example: "Inception"
+      selector:
+        text:
+    season:
+      description: "For TV shows: season number (1, 2, 3) or natural language ('season two', 'remaining seasons', 'next season', 'all seasons'). Defaults to season 1 if not specified."
+      required: false
+      example: "remaining seasons"
       selector:
         text:
   response:

@@ -14,6 +14,7 @@ class OverseerrStatusMaps:
     """Centralized status mappings for Overseerr API responses."""
     
     # Media Status (mediaInfo.status and mediaInfo.status4k) - Based on observed behavior
+    # Used for overall media status in search results and download progress
     MEDIA_STATUS = {
         1: "unknown",
         2: "pending", 
@@ -23,10 +24,11 @@ class OverseerrStatusMaps:
         7: "failed"
     }
     
-    # Request Status (request.status) - Updated with observed status 5
+    # Request Status (request.status and season.status) - Used for request approval status
+    # Status 2 = Approved (which means downloading/processing)
     REQUEST_STATUS = {
         1: "pending",
-        2: "approved", 
+        2: "approved",          # ⭐ APPROVED = Currently downloading/processing
         3: "declined",
         4: "failed",
         5: "available"          # ⭐ OBSERVED: Ice Road completed
@@ -45,7 +47,7 @@ class OverseerrStatusMaps:
     # Human-readable text for request status
     REQUEST_STATUS_TEXT = {
         1: "Pending Approval",
-        2: "Approved",
+        2: "Approved & Downloading",  # ⭐ APPROVED = Currently downloading/processing
         3: "Declined", 
         4: "Failed",
         5: "Available"          # ⭐ ADDED: Missing status
@@ -164,17 +166,101 @@ class OverseerrAPI:
         endpoint = f"api/v1/{encoded_media_type}/{encoded_tmdb_id}"
         return await self._make_request(endpoint)
     
-    async def add_media_request(self, media_type: str, tmdb_id: int, user_id: int = None) -> Optional[Dict]:
+    async def add_media_request(self, media_type: str, tmdb_id: int, user_id: int = None, seasons: list = None) -> Optional[Dict]:
         """Add a media request to Overseerr."""
         endpoint = "api/v1/request"
-        # For JSON data, ensure no special characters in string values
+        
+        # First, check if this media already exists in Overseerr to get configuration
+        existing_request = None
+        if media_type == "tv":
+            try:
+                requests_data = await self.get_requests()
+                if requests_data and requests_data.get("results"):
+                    for request in requests_data["results"]:
+                        media = request.get("media", {})
+                        if media.get("tmdbId") == tmdb_id and media.get("mediaType") == "tv":
+                            existing_request = request
+                            _LOGGER.debug(f"Found existing request for TMDB ID {tmdb_id}: {request.get('id')}")
+                            break
+            except Exception as e:
+                _LOGGER.warning(f"Failed to check existing requests: {e}")
+        
+        # Build the request data
         data = {
-            "mediaType": str(media_type),  # Ensure it's a clean string
-            "mediaId": int(tmdb_id)  # Ensure it's an integer
+            "mediaType": str(media_type),
+            "mediaId": int(tmdb_id)
         }
+        
+        # If we found an existing request, use its configuration
+        if existing_request:
+            # Copy configuration from existing request
+            # data.update({
+            #     "tvdbId": existing_request.get("media", {}).get("tvdbId"),
+            #     "serverId": existing_request.get("serverId", 0),
+            #     "profileId": existing_request.get("profileId"),
+            #     "rootFolder": existing_request.get("rootFolder"),
+            #     "tags": existing_request.get("tags", [])
+            # })
+            _LOGGER.debug(f"Using existing request configuration: serverId={data.get('serverId')}, profileId={data.get('profileId')}, rootFolder={data.get('rootFolder')}")
+        else:
+            # For new requests, use default values
+            # data.update({
+            #     "serverId": 0,
+            #     "tags": []
+            # })
+            _LOGGER.debug(f"Using default configuration for new request")
+        
+        # Add user ID
         if user_id:
             data["userId"] = int(user_id)
-        return await self._make_request(endpoint, method="POST", data=data)
+        
+        # For TV shows, add seasons parameter with better validation
+        if media_type == "tv":
+            if seasons is None or not seasons:
+                # Default to season 1 if no seasons specified
+                data["seasons"] = [1]
+                _LOGGER.debug(f"No seasons specified for TV show, defaulting to season 1")
+            else:
+                # Use specified seasons (ensure they're integers and valid)
+                valid_seasons = []
+                for season in seasons:
+                    try:
+                        season_int = int(season)
+                        if season_int >= 1:  # Only accept positive season numbers
+                            valid_seasons.append(season_int)
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(f"Invalid season number: {season}, skipping")
+                        continue
+                
+                # If no valid seasons provided, default to season 1
+                if not valid_seasons:
+                    _LOGGER.warning(f"No valid seasons found in {seasons}, defaulting to season 1")
+                    data["seasons"] = [1]
+                else:
+                    data["seasons"] = valid_seasons
+                    _LOGGER.debug(f"Requesting TV show seasons: {valid_seasons}")
+        
+        _LOGGER.debug(f"Sending request to Overseerr: {data}")
+        result = await self._make_request(endpoint, method="POST", data=data)
+        
+        # If we get a 500 error and we're requesting seasons, try without seasons as fallback
+        if result is None and self.last_error and "500" in str(self.last_error) and media_type == "tv" and "seasons" in data:
+            _LOGGER.warning(f"Request with seasons failed (500 error), trying without seasons parameter")
+            # Try again without seasons parameter (request entire series)
+            fallback_data = {
+                "mediaType": str(media_type),
+                "mediaId": int(tmdb_id)
+            }
+            if user_id:
+                fallback_data["userId"] = int(user_id)
+            
+            _LOGGER.debug(f"Fallback request to Overseerr: {fallback_data}")
+            result = await self._make_request(endpoint, method="POST", data=fallback_data)
+            
+            if result is not None:
+                _LOGGER.info(f"Fallback request succeeded - requested entire series instead of specific seasons")
+        
+        return result
     
     async def delete_media(self, media_id: int) -> Optional[Dict]:
         """Delete media from Overseerr by media ID."""
@@ -209,6 +295,68 @@ class OverseerrAPI:
         _LOGGER.debug(f"Run job: '{job_id}' -> encoded: '{encoded_job_id}' -> endpoint: '{endpoint}'")
         return await self._make_request(endpoint, method="POST")
 
+    async def get_tv_season_analysis(self, tmdb_id: int) -> Optional[Dict]:
+        """Analyze existing seasons for a TV show and provide recommendations."""
+        try:
+            # Get detailed TV show information
+            tv_details = await self.get_media_details("tv", tmdb_id)
+            if not tv_details:
+                return None
+            
+            total_seasons = tv_details.get("numberOfSeasons", 0)
+            if total_seasons == 0:
+                return None
+            
+            # Get current requests to see what seasons are already requested
+            requests_data = await self.get_requests()
+            if not requests_data:
+                return {"total_seasons": total_seasons, "requested_seasons": [], "available_seasons": []}
+            
+            # Find requests for this specific TV show
+            requested_seasons = []
+            available_seasons = []
+            processing_seasons = []
+            
+            for request in requests_data.get("results", []):
+                media = request.get("media", {})
+                if media.get("tmdbId") == tmdb_id and media.get("mediaType") == "tv":
+                    # Extract season information from the request
+                    seasons = request.get("seasons", [])
+                    for season_info in seasons:
+                        season_num = season_info.get("seasonNumber")
+                        season_status = season_info.get("status")
+                        
+                        if season_num:
+                            requested_seasons.append(season_num)
+                            
+                            # Categorize by status
+                            if season_status == 5:  # Available
+                                available_seasons.append(season_num)
+                            elif season_status in [2, 3]:  # Pending or Processing
+                                processing_seasons.append(season_num)
+            
+            # Calculate missing seasons
+            all_seasons = list(range(1, total_seasons + 1))
+            missing_seasons = [s for s in all_seasons if s not in requested_seasons]
+            
+            return {
+                "total_seasons": total_seasons,
+                "all_seasons": all_seasons,
+                "requested_seasons": sorted(requested_seasons),
+                "available_seasons": sorted(available_seasons),
+                "processing_seasons": sorted(processing_seasons),
+                "missing_seasons": sorted(missing_seasons),
+                "tv_details": {
+                    "title": tv_details.get("name", "Unknown"),
+                    "status": tv_details.get("status", "Unknown"),
+                    "air_date": tv_details.get("firstAirDate", "Unknown")
+                }
+            }
+            
+        except Exception as e:
+            _LOGGER.error(f"Error analyzing TV seasons for {tmdb_id}: {e}")
+            return None
+
 class LLMResponseBuilder:
     """Build structured responses for LLM consumption."""
     
@@ -231,6 +379,10 @@ class LLMResponseBuilder:
         processed_downloads = []
         total_size = 0
         total_remaining = 0
+        
+        # Episode-level information extraction
+        episodes_info = []
+        seasons_downloading = set()
         
         for download in all_downloads:
             size = download.get("size", 0)
@@ -263,6 +415,29 @@ class LLMResponseBuilder:
                 "media_type": download.get("mediaType", "unknown")
             }
             
+            # Extract episode information if available
+            episode = download.get("episode", {})
+            if episode:
+                season_number = episode.get("seasonNumber")
+                episode_number = episode.get("episodeNumber")
+                episode_title = episode.get("title", "Unknown Episode")
+                
+                if season_number:
+                    seasons_downloading.add(season_number)
+                
+                episode_info = {
+                    "season_number": season_number,
+                    "episode_number": episode_number,
+                    "episode_title": episode_title,
+                    "air_date": episode.get("airDate", "Unknown"),
+                    "runtime": episode.get("runtime", 0),
+                    "overview": episode.get("overview", "")[:100] + "..." if len(episode.get("overview", "")) > 100 else episode.get("overview", ""),
+                    "download_progress": progress_percent,
+                    "time_left": download.get("timeLeft", "Unknown")
+                }
+                episodes_info.append(episode_info)
+                processed_download["episode_info"] = episode_info
+            
             processed_downloads.append(processed_download)
             total_size += size
             total_remaining += size_left
@@ -291,7 +466,87 @@ class LLMResponseBuilder:
             "total_remaining_gb": round(total_remaining / (1024 ** 3), 2) if total_remaining > 0 else 0,
             "primary_download": primary_download,
             "all_downloads": processed_downloads,
-            "has_4k_downloads": len(download_status_4k) > 0
+            "has_4k_downloads": len(download_status_4k) > 0,
+            "episodes_downloading": episodes_info,
+            "seasons_downloading": sorted(list(seasons_downloading)),
+            "episode_count": len(episodes_info)
+        }
+    
+    @staticmethod
+    def _extract_season_details_from_request(matching_request: Dict, media_details: Dict = None) -> Dict:
+        """Extract detailed season information from request data with comprehensive season context."""
+        if not matching_request:
+            return None
+        
+        seasons = matching_request.get("seasons", [])
+        if not seasons:
+            return None
+        
+        # Process each season in the request
+        season_details = []
+        requested_seasons = []
+        
+        for season in seasons:
+            season_number = season.get("seasonNumber")
+            season_status = season.get("status")
+            created_at = season.get("createdAt", "")
+            updated_at = season.get("updatedAt", "")
+            
+            if season_number:
+                requested_seasons.append(season_number)
+                
+                # Convert season status to human readable
+                # Season status uses REQUEST_STATUS mapping, not MEDIA_STATUS
+                status_text = OverseerrStatusMaps.get_request_status_text(season_status)
+                
+                season_info = {
+                    "season_number": season_number,
+                    "status": season_status,
+                    "status_text": status_text,
+                    "requested_date": created_at,
+                    "updated_date": updated_at,
+                    "is_available": season_status == 5,
+                    "is_downloading": season_status == 2,  # Status 2 = Approved (which means downloading)
+                    "is_pending": season_status == 1
+                }
+                season_details.append(season_info)
+        
+        # Get total seasons information from media_details if available
+        total_seasons = 0
+        all_seasons = []
+        missing_seasons = []
+        
+        if media_details:
+            total_seasons = media_details.get("numberOfSeasons", 0)
+            if total_seasons > 0:
+                all_seasons = list(range(1, total_seasons + 1))
+                missing_seasons = [s for s in all_seasons if s not in requested_seasons]
+        
+        # Calculate season statistics
+        downloading_seasons = [s["season_number"] for s in season_details if s["is_downloading"]]
+        available_seasons = [s["season_number"] for s in season_details if s["is_available"]]
+        pending_seasons = [s["season_number"] for s in season_details if s["is_pending"]]
+        
+        return {
+            "requested_seasons": sorted(requested_seasons),
+            "season_count": len(requested_seasons),
+            "season_details": season_details,
+            "has_multiple_seasons": len(requested_seasons) > 1,
+            # Enhanced season information
+            "total_seasons": total_seasons,
+            "all_seasons": all_seasons,
+            "missing_seasons": sorted(missing_seasons),
+            "downloading_seasons": sorted(downloading_seasons),
+            "available_seasons": sorted(available_seasons),
+            "pending_seasons": sorted(pending_seasons),
+            "season_summary": {
+                "requested": len(requested_seasons),
+                "total_available": total_seasons,
+                "missing": len(missing_seasons),
+                "downloading": len(downloading_seasons),
+                "available": len(available_seasons),
+                "pending": len(pending_seasons)
+            }
         }
     
     @staticmethod
@@ -344,10 +599,13 @@ class LLMResponseBuilder:
                         matching_request = req
                         break
             
+            # Extract season details from request data with media context
+            season_details = LLMResponseBuilder._extract_season_details_from_request(matching_request, media_details)
+            
             # Build the structured response
             response = {
                 "action": "found_media",
-                "llm_instructions": "Focus on request status, who requested it, download progress, and content overview unless asked for specific details.",
+                "llm_instructions": "Focus on requested seasons, download progress, and who requested it. Include information about total seasons available and missing seasons when relevant for TV shows.",
                 "searched_title": title,
                 "primary_result": {
                     "search_info": {
@@ -360,15 +618,16 @@ class LLMResponseBuilder:
                         "release_date": search_result.get("releaseDate") or search_result.get("firstAirDate", "Unknown"),
                         "rating": search_result.get("voteAverage", 0),
                         "download_info": LLMResponseBuilder._build_download_info(search_result.get("mediaInfo")),
-                        "request_details": LLMResponseBuilder._build_request_details(matching_request)
+                        "request_details": LLMResponseBuilder._build_request_details(matching_request),
+                        "season_info": season_details
                     },
                     "content_details": {
                         "overview": media_details.get("overview", "Overview not available")[:300] if media_details else "Overview not available",
                         "genres": [genre["name"] for genre in media_details.get("genres", [])][:3] if media_details else [],
-                        "media_specific": LLMResponseBuilder._build_media_specific_info(search_result, media_details)
+                        "media_specific": LLMResponseBuilder._build_media_specific_info(search_result, media_details, season_details)
                     }
                 },
-                "message": f"Found detailed information for '{search_result.get('title') or search_result.get('name')}'. Focus on request status, who requested it, download progress, and content overview unless asked for specific details."
+                "message": f"Found detailed information for '{search_result.get('title') or search_result.get('name')}'. Includes requested seasons, download progress, total seasons available, and missing seasons information."
             }
             
             return response
@@ -390,154 +649,73 @@ class LLMResponseBuilder:
             return {
                 "requested_by": "Information not available",
                 "request_date": "Unknown",
-                "request_id": None
+                "request_id": None,
+                "season_count": 0,
+                "requested_seasons": []
             }
+        
+        # Extract season information
+        seasons = matching_request.get("seasons", [])
+        requested_seasons = [s.get("seasonNumber") for s in seasons if s.get("seasonNumber")]
         
         return {
             "requested_by": matching_request.get("requestedBy", {}).get("displayName") or 
                            matching_request.get("requestedBy", {}).get("username", "Unknown User"),
             "request_date": matching_request.get("createdAt", "Unknown"),
-            "request_id": matching_request.get("id")
+            "request_id": matching_request.get("id"),
+            "season_count": len(requested_seasons),
+            "requested_seasons": sorted(requested_seasons),
+            "is_4k_request": matching_request.get("is4k", False)
         }
     
     @staticmethod
-    def _build_media_specific_info(search_result: Dict, media_details: Dict) -> Dict:
-        """Build media type specific information."""
+    def _build_media_specific_info(search_result: Dict, media_details: Dict, season_details: Dict = None) -> Dict:
+        """Build media type specific information with season context."""
         media_type = search_result.get("mediaType", "unknown")
         
-        if media_type == "tv" and media_details:
-            return {
-                "seasons": media_details.get("numberOfSeasons", 0),
-                "episodes": media_details.get("numberOfEpisodes", 0),
-                "episode_runtime": media_details.get("episodeRunTime", [None])[0],
-                "series_status": media_details.get("status", "Unknown"),
-                "networks": media_details.get("networks", [{}])[0].get("name", "Unknown") if media_details.get("networks") else "Unknown"
-            }
+        if media_type == "tv":
+            # For TV shows, include basic series info without duplicating season details
+            if season_details:
+                # Include basic series info, season details are already in season_info
+                return {
+                    "episode_runtime": media_details.get("episodeRunTime", [None])[0] if media_details and media_details.get("episodeRunTime") else None,
+                    "series_status": media_details.get("status", "Unknown") if media_details else "Unknown",
+                    "networks": media_details.get("networks", [{}])[0].get("name", "Unknown") if media_details and media_details.get("networks") else "Unknown",
+                    "note": "Season details available in season_info section"
+                }
+            elif media_details:
+                # Fallback to total seasons only if no request data available
+                episode_runtime_list = media_details.get("episodeRunTime", [])
+                episode_runtime = episode_runtime_list[0] if episode_runtime_list else None
+                
+                networks_list = media_details.get("networks", [])
+                network_name = networks_list[0].get("name", "Unknown") if networks_list else "Unknown"
+                
+                return {
+                    "total_seasons": media_details.get("numberOfSeasons", 0),
+                    "total_episodes": media_details.get("numberOfEpisodes", 0),
+                    "episode_runtime": episode_runtime,
+                    "series_status": media_details.get("status", "Unknown"),
+                    "networks": network_name,
+                    "note": "No specific seasons requested yet"
+                }
+            else:
+                return {"note": "TV show information not available"}
+        
         elif media_type == "movie" and media_details:
+            # Safe array access with bounds checking
+            production_companies_list = media_details.get("productionCompanies", [])
+            production_company = production_companies_list[0].get("name", "Unknown") if production_companies_list else "Unknown"
+            
             return {
                 "runtime": media_details.get("runtime", 0),
                 "budget": media_details.get("budget", 0),
                 "revenue": media_details.get("revenue", 0),
-                "production_companies": media_details.get("productionCompanies", [{}])[0].get("name", "Unknown") if media_details.get("productionCompanies") else "Unknown"
+                "production_companies": production_company
             }
         
         return {}
-    
-    @staticmethod
-    def _extract_year(search_result: Dict) -> str:
-        """Extract year from release date."""
-        release_date = search_result.get("releaseDate") or search_result.get("firstAirDate")
-        if release_date and len(release_date) >= 4:
-            return release_date[:4]
-        return "Unknown"
-    
-    @staticmethod
-    def build_add_media_response(
-        action: str,
-        title: str = None,
-        search_result: Dict = None,
-        media_details: Dict = None,
-        add_result: Dict = None,
-        message: str = None,
-        error_details: str = None
-    ) -> Dict:
-        """Build a structured add media response for LLM."""
-        
-        if action == "missing_title":
-            return {
-                "action": "missing_title",
-                "error": "No search title provided",
-                "message": "Please provide a movie or TV show title to search for"
-            }
-        
-        if action == "connection_error":
-            return {
-                "action": "connection_error",
-                "error": "Failed to connect to Overseerr server",
-                "error_details": error_details,
-                "searched_title": title,
-                "message": "Connection error - check Overseerr configuration and server status",
-                "troubleshooting": [
-                    "Verify Overseerr server is running",
-                    "Check URL and API key configuration", 
-                    "Confirm network connectivity",
-                    "Check Home Assistant logs for details"
-                ]
-            }
-        
-        if action == "not_found":
-            return {
-                "action": "not_found",
-                "searched_title": title,
-                "message": f"No movies or TV shows found matching '{title}'"
-            }
-        
-        if action == "media_already_exists" and search_result:
-            return {
-                "action": "media_already_exists",
-                "media_type": search_result.get("mediaType", "unknown"),
-                "searched_title": title,
-                "media": {
-                    "title": search_result.get("title") or search_result.get("name", "Unknown"),
-                    "tmdb_id": search_result.get("id", 0),
-                    "status": search_result.get("mediaInfo", {}).get("status") if search_result.get("mediaInfo") else None,
-                    "status_text": LLMResponseBuilder._get_status_text(search_result.get("mediaInfo", {}).get("status")) if search_result.get("mediaInfo") else "Not Requested",
-                    "year": LLMResponseBuilder._extract_year(search_result),
-                    "rating": search_result.get("voteAverage", 0),
-                    "overview_short": media_details.get("overview", "")[:150] + "..." if media_details and len(media_details.get("overview", "")) > 150 else media_details.get("overview", "") if media_details else "",
-                    "genres": [genre["name"] for genre in media_details.get("genres", [])][:2] if media_details else [],
-                    "watch_url": search_result.get('mediaInfo', {}).get('mediaUrl'),
-                    "download_info": LLMResponseBuilder._build_download_info(search_result.get("mediaInfo"))
-                },
-                "message": f"{search_result.get('mediaType', 'Media').title()} already exists in Overseerr"
-            }
-        
-        if action == "media_added_successfully" and search_result:
-            return {
-                "action": "media_added_successfully",
-                "media_type": search_result.get("mediaType", "unknown"),
-                "searched_title": title,
-                "media": {
-                    "title": search_result.get("title") or search_result.get("name", "Unknown"),
-                    "tmdb_id": search_result.get("id", 0),
-                    "year": LLMResponseBuilder._extract_year(search_result),
-                    "rating": search_result.get("voteAverage", 0),
-                    "overview_short": media_details.get("overview", "")[:150] + "..." if media_details and len(media_details.get("overview", "")) > 150 else media_details.get("overview", "") if media_details else "",
-                    "genres": [genre["name"] for genre in media_details.get("genres", [])][:2] if media_details else []
-                },
-                "next_steps": {
-                    "suggestion": "Would you like me to check the status of this media request?",
-                    "action_prompt": f"Ask me: 'What's the status of {search_result.get('title') or search_result.get('name', title)}?'",
-                    "typical_workflow": [
-                        "Request submitted to Overseerr",
-                        "Admin approval (if required)",
-                        "Download begins",
-                        "Media available in library"
-                    ]
-                },
-                "message": f"{search_result.get('mediaType', 'Media').title()} successfully added to Overseerr"
-            }
-        
-        if action == "media_add_failed":
-            return {
-                "action": "media_add_failed",
-                "error": "Media could not be added to Overseerr",
-                "error_details": error_details,
-                "searched_title": title,
-                "message": "Media request failed - check Overseerr configuration and permissions",
-                "troubleshooting": [
-                    "Check if user has permission to make requests",
-                    "Verify media is available on configured indexers",
-                    "Confirm Overseerr quality profiles are set up",
-                    "Check Overseerr logs for specific errors"
-                ]
-            }
-        
-        return {
-            "action": "error",
-            "message": "Unexpected error occurred"
-        }
-    
+
     @staticmethod
     def build_search_response(
         action: str,
@@ -743,6 +921,26 @@ class LLMResponseBuilder:
                 }
             }
         
+        if action == "user_not_mapped":
+            return {
+                "action": "user_not_mapped",
+                "error": "User not registered for media operations",
+                "error_details": error_details,
+                "searched_title": title,
+                "message": "Sorry, you're not registered to perform media operations through this system.",
+                "explanation": "Your Home Assistant user account needs to be mapped to an Overseerr user account to remove media.",
+                "next_steps": {
+                    "suggestion": "Contact your system administrator to add your account to the media request system",
+                    "admin_instructions": [
+                        "Go to Settings > Devices & Services > Hassarr",
+                        "Click 'Configure' on the Hassarr integration",
+                        "Add your Home Assistant user to the user mapping section",
+                        "Map your account to the appropriate Overseerr user"
+                    ]
+                },
+                "llm_instructions": "Be polite but firm. Explain they need admin help to get access. Don't offer to help them bypass this restriction."
+            }
+        
         return {
             "action": "error",
             "message": "Unexpected error occurred in remove media operation"
@@ -794,7 +992,15 @@ class LLMResponseBuilder:
                     # If no media status, we can't properly categorize, so treat as other
                     status = 1
                 
-                if status == 1:
+                # Check for active downloads - if there are downloads happening, it's processing
+                download_status = media.get("downloadStatus", [])
+                download_status_4k = media.get("downloadStatus4k", [])
+                has_active_downloads = len(download_status) > 0 or len(download_status_4k) > 0
+                
+                # If there are active downloads, prioritize as processing regardless of status
+                if has_active_downloads:
+                    processing_requests.append(request)  # Active downloads = processing
+                elif status == 1:
                     other_requests.append(request)  # Unknown status
                 elif status == 2:
                     pending_requests.append(request)  # Pending Approval
@@ -875,7 +1081,7 @@ class LLMResponseBuilder:
                 "recent_completed": resolved_requests,
                 "message": f"Found {total_requests} total requests ({breakdown_text})",
                 "llm_instructions": {
-                    "response_guidance": "Focus on active requests (downloading/pending) but mention the status breakdown to explain all request counts",
+                    "response_guidance": "Focus on active requests (downloading/pending) and include specific season information for TV shows. Mention which seasons are downloading, available, or pending.",
                     "priority_note": "Processing requests are shown first, then pending requests",
                     "status_meanings": {
                         "processing": "Currently downloading or being processed", 
@@ -884,6 +1090,8 @@ class LLMResponseBuilder:
                         "failed": "Failed to download or unavailable",
                         "partially_available": "Some content available, some missing"
                     },
+                    "season_info_note": "For TV shows, season-specific details are included showing which specific seasons are downloading, available, or pending",
+                    "episode_info_note": "Download progress includes individual episode information when available",
                     "completed_note": "Recent completed requests are included for context"
                 },
                 "next_steps": {
@@ -987,7 +1195,12 @@ class LLMResponseBuilder:
         # Extract download information if available
         download_info = LLMResponseBuilder._build_download_info(media)
         
-        return {
+        # Extract detailed season information for TV shows
+        season_info = None
+        if media_type == "tv":
+            season_info = LLMResponseBuilder._extract_season_details_from_request(request, media_details)
+        
+        result = {
             "title": title,
             "year": year,
             "media_type": media_type,
@@ -1000,6 +1213,40 @@ class LLMResponseBuilder:
             "overview": overview,
             "download_info": download_info
         }
+        
+        # Add season information for TV shows
+        if season_info:
+            result["season_info"] = season_info
+            result["requested_seasons"] = season_info["requested_seasons"]
+            result["season_count"] = season_info["season_count"]
+            
+            # Add season-specific status summary for TV shows
+            downloading_seasons = [s["season_number"] for s in season_info["season_details"] if s["is_downloading"]]
+            available_seasons = [s["season_number"] for s in season_info["season_details"] if s["is_available"]]
+            pending_seasons = [s["season_number"] for s in season_info["season_details"] if s["is_pending"]]
+            
+            season_status_parts = []
+            if downloading_seasons:
+                if len(downloading_seasons) == 1:
+                    season_status_parts.append(f"Season {downloading_seasons[0]} downloading")
+                else:
+                    season_status_parts.append(f"Seasons {', '.join(map(str, downloading_seasons))} downloading")
+            
+            if available_seasons:
+                if len(available_seasons) == 1:
+                    season_status_parts.append(f"Season {available_seasons[0]} available")
+                else:
+                    season_status_parts.append(f"Seasons {', '.join(map(str, available_seasons))} available")
+            
+            if pending_seasons:
+                if len(pending_seasons) == 1:
+                    season_status_parts.append(f"Season {pending_seasons[0]} pending")
+                else:
+                    season_status_parts.append(f"Seasons {', '.join(map(str, pending_seasons))} pending")
+            
+            result["season_status_summary"] = "; ".join(season_status_parts) if season_status_parts else "Season status unknown"
+        
+        return result
 
     @staticmethod
     def build_run_job_response(
@@ -1070,7 +1317,277 @@ class LLMResponseBuilder:
                 }
             }
         
+        if action == "user_not_mapped":
+            return {
+                "action": "user_not_mapped",
+                "error": "User not registered for job operations",
+                "error_details": error_details,
+                "job_id": job_id,
+                "message": f"Sorry, you're not registered to run jobs through this system.",
+                "explanation": "Your Home Assistant user account needs to be mapped to an Overseerr user account to run maintenance jobs.",
+                "next_steps": {
+                    "suggestion": "Contact your system administrator to add your account to the media request system",
+                    "admin_instructions": [
+                        "Go to Settings > Devices & Services > Hassarr",
+                        "Click 'Configure' on the Hassarr integration",
+                        "Add your Home Assistant user to the user mapping section",
+                        "Map your account to the appropriate Overseerr user"
+                    ]
+                },
+                "llm_instructions": "Be polite but firm. Explain they need admin help to get access. Don't offer to help them bypass this restriction."
+            }
+        
         return {
             "action": "error",
             "message": "Unexpected error occurred in run job operation"
+        }
+
+    @staticmethod
+    def _extract_year(search_result: Dict) -> str:
+        """Extract year from release date."""
+        release_date = search_result.get("releaseDate") or search_result.get("firstAirDate")
+        if release_date and len(release_date) >= 4:
+            return release_date[:4]
+        return "Unknown"
+    
+    @staticmethod
+    async def build_add_media_response(
+        action: str,
+        title: str = None,
+        search_result: Dict = None,
+        media_details: Dict = None,
+        add_result: Dict = None,
+        message: str = None,
+        error_details: str = None,
+        season: int = None,
+        season_analysis: Dict = None,
+        parse_type: str = None,
+        seasons_list: list = None,
+        api = None
+    ) -> Dict:
+        """Build a structured add media response for LLM."""
+        
+        if action == "missing_title":
+            return {
+                "action": "missing_title",
+                "error": "No search title provided",
+                "message": "Please provide a movie or TV show title to search for"
+            }
+        
+        if action == "connection_error":
+            return {
+                "action": "connection_error",
+                "error": "Failed to connect to Overseerr server",
+                "error_details": error_details,
+                "searched_title": title,
+                "message": "Connection error - check Overseerr configuration and server status",
+                "troubleshooting": [
+                    "Verify Overseerr server is running",
+                    "Check URL and API key configuration", 
+                    "Confirm network connectivity",
+                    "Check Home Assistant logs for details"
+                ]
+            }
+        
+        if action == "not_found":
+            return {
+                "action": "not_found",
+                "searched_title": title,
+                "message": f"No movies or TV shows found matching '{title}'"
+            }
+        
+        if action == "media_already_exists" and search_result:
+            response = {
+                "action": "media_already_exists",
+                "media_type": search_result.get("mediaType", "unknown"),
+                "searched_title": title,
+                "media": {
+                    "title": search_result.get("title") or search_result.get("name", "Unknown"),
+                    "tmdb_id": search_result.get("id", 0),
+                    "status": search_result.get("mediaInfo", {}).get("status") if search_result.get("mediaInfo") else None,
+                    "status_text": LLMResponseBuilder._get_status_text(search_result.get("mediaInfo", {}).get("status")) if search_result.get("mediaInfo") else "Not Requested",
+                    "year": LLMResponseBuilder._extract_year(search_result),
+                    "rating": search_result.get("voteAverage", 0),
+                    "overview_short": media_details.get("overview", "")[:150] + "..." if media_details and len(media_details.get("overview", "")) > 150 else media_details.get("overview", "") if media_details else "",
+                    "genres": [genre["name"] for genre in media_details.get("genres", [])][:2] if media_details else [],
+                    "watch_url": search_result.get('mediaInfo', {}).get('mediaUrl'),
+                    "download_info": LLMResponseBuilder._build_download_info(search_result.get("mediaInfo"))
+                },
+                "message": f"{search_result.get('mediaType', 'Media').title()} already exists in Overseerr"
+            }
+            
+            # Add season context for TV shows with intelligent suggestions
+            if search_result.get("mediaType") == "tv":
+                if season_analysis:
+                    # Build intelligent season suggestions
+                    suggestions = []
+                    missing_seasons = season_analysis.get("missing_seasons", [])
+                    processing_seasons = season_analysis.get("processing_seasons", [])
+                    available_seasons = season_analysis.get("available_seasons", [])
+                    total_seasons = season_analysis.get("total_seasons", 0)
+                    
+                    # Create status summary
+                    status_parts = []
+                    if available_seasons:
+                        if len(available_seasons) == 1:
+                            status_parts.append(f"Season {available_seasons[0]} is available")
+                        else:
+                            status_parts.append(f"Seasons {', '.join(map(str, available_seasons))} are available")
+                    
+                    if processing_seasons:
+                        if len(processing_seasons) == 1:
+                            status_parts.append(f"Season {processing_seasons[0]} is downloading")
+                        else:
+                            status_parts.append(f"Seasons {', '.join(map(str, processing_seasons))} are downloading")
+                    
+                    status_summary = "; ".join(status_parts) if status_parts else "No seasons available yet"
+                    
+                    # Generate suggestions
+                    if missing_seasons:
+                        if len(missing_seasons) == 1:
+                            suggestions.append(f"Request season {missing_seasons[0]}")
+                        elif len(missing_seasons) <= 3:
+                            suggestions.append(f"Request seasons {', '.join(map(str, missing_seasons))}")
+                        else:
+                            suggestions.append(f"Request remaining {len(missing_seasons)} seasons ({missing_seasons[0]}-{missing_seasons[-1]})")
+                    
+                    response["season_analysis"] = {
+                        "total_seasons": total_seasons,
+                        "status_summary": status_summary,
+                        "available_seasons": available_seasons,
+                        "processing_seasons": processing_seasons,
+                        "missing_seasons": missing_seasons,
+                        "requested_season": season,
+                        "suggestions": suggestions
+                    }
+                    
+                    # Update message with season context
+                    if season is not None:
+                        if season in available_seasons:
+                            response["message"] = f"TV show already exists - Season {season} is available in your library"
+                        elif season in processing_seasons:
+                            response["message"] = f"TV show already exists - Season {season} is currently downloading"
+                        else:
+                            response["message"] = f"TV show already exists - Season {season} is not yet requested"
+                    else:
+                        response["message"] = f"TV show already exists in Overseerr ({status_summary})"
+                    
+                    # Add LLM instructions for natural conversation
+                    response["llm_suggestions"] = {
+                        "conversation_starters": [
+                            "Would you like me to add the missing seasons?",
+                            "Should I request the remaining episodes?",
+                            f"I can add seasons {', '.join(map(str, missing_seasons[:3]))} if you'd like"
+                        ] if missing_seasons else [
+                            "All seasons are already requested or available",
+                            "You have the complete series"
+                        ]
+                    }
+                else:
+                    # Fallback for when season analysis isn't available
+                    if season is not None:
+                        response["season_context"] = {
+                            "requested_season": season,
+                            "note": f"You requested season {season}, but the series is already in your library"
+                        }
+                        response["message"] = f"TV show already exists in Overseerr (you requested season {season})"
+                
+            return response
+        
+        if action == "media_added_successfully" and search_result:
+            response = {
+                "action": "media_added_successfully",
+                "media_type": search_result.get("mediaType", "unknown"),
+                "searched_title": title,
+                "media": {
+                    "title": search_result.get("title") or search_result.get("name", "Unknown"),
+                    "tmdb_id": search_result.get("id", 0),
+                    "year": LLMResponseBuilder._extract_year(search_result),
+                    "rating": search_result.get("voteAverage", 0),
+                    "overview_short": media_details.get("overview", "")[:150] + "..." if media_details and len(media_details.get("overview", "")) > 150 else media_details.get("overview", "") if media_details else "",
+                    "genres": [genre["name"] for genre in media_details.get("genres", [])][:2] if media_details else []
+                },
+                "next_steps": {
+                    "suggestion": "Would you like me to check the status of this media request?",
+                    "action_prompt": f"Ask me: 'What's the status of {search_result.get('title') or search_result.get('name', title)}?'",
+                    "typical_workflow": [
+                        "Request submitted to Overseerr",
+                        "Admin approval (if required)",
+                        "Download begins",
+                        "Media available in library"
+                    ]
+                },
+                "message": f"{search_result.get('mediaType', 'Media').title()} successfully added to Overseerr"
+            }
+            
+            # Add season context for TV shows
+            if search_result.get("mediaType") == "tv":
+                if parse_type == "all":
+                    response["season_context"] = {
+                        "requested_season": "all",
+                        "note": "Requested entire series (all seasons)"
+                    }
+                    response["message"] = "TV show successfully added to Overseerr (entire series requested)"
+                elif season is not None:
+                    # Check if we have multiple seasons in the seasons_list
+                    if seasons_list and len(seasons_list) > 1:
+                        seasons_str = ", ".join(map(str, seasons_list))
+                        response["season_context"] = {
+                            "requested_season": seasons_list,
+                            "note": f"Requested seasons {seasons_str}"
+                        }
+                        response["message"] = f"TV show successfully added to Overseerr (seasons {seasons_str} requested)"
+                    else:
+                        response["season_context"] = {
+                            "requested_season": season,
+                            "note": f"Requested season {season} specifically"
+                        }
+                        response["message"] = f"TV show successfully added to Overseerr (season {season} requested)"
+                else:
+                    response["season_context"] = {
+                        "requested_season": 1,
+                        "note": "No season specified, defaulted to season 1"
+                    }
+                    response["message"] = "TV show successfully added to Overseerr (defaulted to season 1)"
+            
+            return response
+        
+        if action == "media_add_failed":
+            return {
+                "action": "media_add_failed",
+                "error": "Media could not be added to Overseerr",
+                "error_details": error_details,
+                "searched_title": title,
+                "message": "Media request failed - check Overseerr configuration and permissions",
+                "troubleshooting": [
+                    "Check if user has permission to make requests",
+                    "Verify media is available on configured indexers",
+                    "Confirm Overseerr quality profiles are set up",
+                    "Check Overseerr logs for specific errors"
+                ]
+            }
+        
+        if action == "user_not_mapped":
+            return {
+                "action": "user_not_mapped",
+                "error": "User not registered for media requests",
+                "error_details": error_details,
+                "searched_title": title,
+                "message": f"Sorry, you're not registered to make media requests through this system.",
+                "explanation": "Your Home Assistant user account needs to be mapped to an Overseerr user account to make requests.",
+                "next_steps": {
+                    "suggestion": "Contact your system administrator to add your account to the media request system",
+                    "admin_instructions": [
+                        "Go to Settings > Devices & Services > Hassarr",
+                        "Click 'Configure' on the Hassarr integration",
+                        "Add your Home Assistant user to the user mapping section",
+                        "Map your account to the appropriate Overseerr user"
+                    ]
+                },
+                "llm_instructions": "Be polite but firm. Explain they need admin help to get access. Don't offer to help them bypass this restriction."
+            }
+        
+        return {
+            "action": "error",
+            "message": "Unexpected error occurred"
         }
