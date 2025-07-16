@@ -53,13 +53,13 @@ hassarr_search_media:
 
 hassarr_add_media:
   alias: "Add Media to Overseerr"
-  description: "Add a movie or TV show to Overseerr for download. For TV shows, you can specify a season number or 'all seasons' to request the entire series."
+  description: "Add a movie or TV show to Overseerr for download. For movies, you can specify 4K quality (is4k: true) if the user asks for '4K' or 'UHD', otherwise default to false. For TV shows, you can specify a season number or 'all seasons' to request the entire series."
   icon: mdi:plus-circle-multiple
   mode: single
   fields:
     title:
       name: "Media Title"
-      description: "The movie or TV show name (e.g. 'Breaking Bad', 'The Matrix'). For 'add season 2 of Breaking Bad', use title='Breaking Bad' and season='2'."
+      description: "The movie or TV show name (e.g. 'Breaking Bad', 'The Matrix'). For 'add season 2 of Breaking Bad', use title='Breaking Bad' and season='2'. For 'add The Matrix in 4K', use title='The Matrix' and is4k=true."
       required: true
       selector:
         text:
@@ -73,7 +73,7 @@ hassarr_add_media:
       example: "2"
     is4k:
       name: "4K Quality (Movies Only)"
-      description: "Request movie in 4K quality (only applicable for movies, not TV shows)"
+      description: "Request movie in 4K quality (only applicable for movies, not TV shows). Set to true if the user specifically mentions '4K', 'UHD', or 'high quality'."
       required: false
       selector:
         boolean:
