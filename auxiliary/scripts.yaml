@@ -71,6 +71,13 @@ hassarr_add_media:
       selector:
         text:
       example: "2"
+    is4k:
+      name: "4K Quality (Movies Only)"
+      description: "Request movie in 4K quality (only applicable for movies, not TV shows)"
+      required: false
+      selector:
+        boolean:
+      default: false
   sequence:
     - service: hassarr.add_media
       data:
@@ -81,6 +88,7 @@ hassarr_add_media:
           {% else %}
             {{ none }}
           {% endif %}
+        is4k: "{{ is4k | default(false) }}"
       response_variable: add_result
     - stop: ""
       response_variable: add_result

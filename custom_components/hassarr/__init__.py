@@ -347,6 +347,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         try:
             title = call.data.get("title", "").strip()
             season_input = call.data.get("season")  # Optional season parameter
+            is4k = call.data.get("is4k", False)  # Optional 4K parameter for movies
             user_context = await _get_user_context(call)
             
             if not title:
@@ -356,7 +357,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 return result
 
             season_info = f" (season: {season_input})" if season_input is not None else ""
-            _LOGGER.info(f"Adding media to Overseerr: {title}{season_info} (called by {user_context['username']})")
+            quality_info = " in 4K" if is4k else ""
+            _LOGGER.info(f"Adding media to Overseerr: {title}{season_info}{quality_info} (called by {user_context['username']})")
             api = hass.data[DOMAIN]["api"]
             
             # Search for the media first to get media type and tmdb_id
@@ -545,9 +547,20 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 else:
                     _LOGGER.debug(f"Requesting entire series (all seasons) for TV show '{title}'")
             else:
-                _LOGGER.debug(f"Adding movie '{title}' (seasons parameter not applicable)")
+                # For movies, check if 4K was requested
+                if is4k:
+                    _LOGGER.debug(f"Adding movie '{title}' in 4K quality")
+                else:
+                    _LOGGER.debug(f"Adding movie '{title}' in standard quality")
             
-            add_result = await api.add_media_request(media_type, tmdb_id, overseerr_user_id, seasons_list)
+            # Only pass is4k parameter for movies
+            add_result = await api.add_media_request(
+                media_type, 
+                tmdb_id, 
+                overseerr_user_id, 
+                seasons_list,
+                is4k if media_type == "movie" else False
+            )
             
             if add_result:
                 # Successfully added, get details for response
@@ -575,7 +588,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                     add_result=add_result,
                     season=actual_season,
                     parse_type=parse_type,
-                    seasons_list=seasons_list
+                    seasons_list=seasons_list,
+                    is4k=is4k if media_type == "movie" else False
                 )
                 
                 # Add fallback information if needed
@@ -589,7 +603,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 
                 result["user_context"] = user_context
                 hass.data[DOMAIN]["last_add_media"] = result
-                _LOGGER.info(f"Successfully added '{title}'{season_info} to Overseerr{fallback_message}")
+                _LOGGER.info(f"Successfully added '{title}'{season_info}{quality_info} to Overseerr{fallback_message}")
                 return result
             else:
                 # Failed to add - get detailed error from API
@@ -968,6 +982,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         schema=vol.Schema({
             vol.Required("title"): str,
             vol.Optional("season"): vol.Any(int, str),
+            vol.Optional("is4k"): bool,
         }),
         supports_response=True
     )

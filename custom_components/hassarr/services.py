@@ -166,7 +166,7 @@ class OverseerrAPI:
         endpoint = f"api/v1/{encoded_media_type}/{encoded_tmdb_id}"
         return await self._make_request(endpoint)
     
-    async def add_media_request(self, media_type: str, tmdb_id: int, user_id: int = None, seasons: list = None) -> Optional[Dict]:
+    async def add_media_request(self, media_type: str, tmdb_id: int, user_id: int = None, seasons: list = None, is4k: bool = False) -> Optional[Dict]:
         """Add a media request to Overseerr."""
         endpoint = "api/v1/request"
         
@@ -190,6 +190,11 @@ class OverseerrAPI:
             "mediaType": str(media_type),
             "mediaId": int(tmdb_id)
         }
+        
+        # Add 4K flag for movies if requested
+        if media_type == "movie" and is4k:
+            data["is4k"] = True
+            _LOGGER.debug(f"Requesting movie in 4K: {data}")
         
         # If we found an existing request, use its configuration
         if existing_request:
@@ -1363,6 +1368,7 @@ class LLMResponseBuilder:
         season_analysis: Dict = None,
         parse_type: str = None,
         seasons_list: list = None,
+        is4k: bool = False,
         api = None
     ) -> Dict:
         """Build a structured add media response for LLM."""
@@ -1415,6 +1421,11 @@ class LLMResponseBuilder:
                 },
                 "message": f"{search_result.get('mediaType', 'Media').title()} already exists in Overseerr"
             }
+            
+            # Add 4K information for movies
+            if search_result.get("mediaType") == "movie" and is4k:
+                response["media"]["requested_4k"] = True
+                response["message"] = f"Movie already exists in Overseerr (4K version was requested)"
             
             # Add season context for TV shows with intelligent suggestions
             if search_result.get("mediaType") == "tv":
@@ -1519,6 +1530,11 @@ class LLMResponseBuilder:
                 },
                 "message": f"{search_result.get('mediaType', 'Media').title()} successfully added to Overseerr"
             }
+            
+            # Add 4K information for movies
+            if search_result.get("mediaType") == "movie" and is4k:
+                response["media"]["requested_4k"] = True
+                response["message"] = f"Movie successfully added to Overseerr in 4K quality"
             
             # Add season context for TV shows
             if search_result.get("mediaType") == "tv":

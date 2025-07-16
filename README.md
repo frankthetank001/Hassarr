@@ -368,13 +368,14 @@ automation:
 - **Smart Season Suggestions**: Automatic suggestions for missing seasons when adding existing TV shows
 - **Detailed Season Information**: Rich season-specific status details including which seasons are downloading, available, or pending
 - **Episode-level Information**: Detailed progress tracking for individual episodes within seasons
+- **4K Movie Support**: Request movies in 4K quality with a simple parameter
 
 ### Upcoming Enhancements 🚀
 - **Radarr/Sonarr Feature Parity**: Update the direct Radarr/Sonarr mode to have the same rich service calls and sensor support as the Overseerr/Jellyseerr mode
 - **Smarter Status Checks**: Enhance the `check_media_status` service to query Radarr/Sonarr directly if a movie is not found or is stuck in a non-downloading state in Overseerr
 - **Availability Sync**: Improve the status check to poll Radarr/Sonarr directly if a request is 100% downloaded in the client but not yet marked as "Available" in Overseerr
 - **Post-Action Sync**: Add a post-action hook to the `add_media` and `remove_media` services to automatically trigger the media availability and download sync jobs in Overseerr, ensuring the UI reflects changes almost instantly
-- **Quality Profile & 4K Support**: Add support for specifying quality profiles (e.g., "in 1080p", "in highest quality") and making 4K requests directly in the service call
+- **Quality Profile Support**: Add support for specifying quality profiles (e.g., "in 1080p", "in highest quality") for both movies and TV shows
 - **Extended LLM Integration**: Improved compatibility with OpenAI and other conversation agents beyond Ollama
 - **Improved Error Handling**: More graceful recovery from API errors and better feedback to users
 - **Enhanced Monitoring**: Additional sensors for system performance and request history analytics
