@@ -167,10 +167,23 @@ hassarr_add_media:
       required: true
       selector:
         text:
+    season:
+      description: "For TV shows: season number, range, or 'all seasons'"
+      required: false
+      selector:
+        text:
+    is4k:
+      description: "Request movie in 4K quality (movies only)"
+      required: false
+      selector:
+        boolean:
+      default: false
   sequence:
     - service: hassarr.add_media
       data:
         title: "{{ title }}"
+        season: "{{ season }}"
+        is4k: "{{ is4k | default(false) }}"
       response_variable: add_result
     - stop: ""
       response_variable: add_result
@@ -182,11 +195,32 @@ hassarr_add_media:
 1.  Go to **Settings > Devices & Services > Ollama**.
 2.  Add/Configure your Ollama instance.
 3.  Enable **Assist** for home assistant control.
+4.  **Important**: For 4K movie requests and complex season requests, use the custom prompt from [ollama_prompt.yaml](/auxiliary/ollama_prompt.yaml).
 
 #### Step 4: Expose your scripts to Home Assist
 1. Go to **Settings > Home Assistant**.
 2. CLick on **Entities**
 3. Find and add the script entities you created in step 2.
+
+### Troubleshooting Ollama Integration
+
+If you encounter issues with Ollama not properly handling requests (especially for 4K movies or season ranges):
+
+1. **Use a compatible model**: Make sure you're using a model that supports tool use, such as:
+   - llama3.2 (8B or larger recommended)
+   - qwen2.5:7b
+   - phi4-mini (if available)
+
+2. **Update your system prompt**: Copy the prompt from [ollama_prompt.yaml](/auxiliary/ollama_prompt.yaml) into your Ollama configuration.
+
+3. **Check for "Unga Bunga" responses**: If you see nonsensical responses like "Unga Bunga not understand season", this indicates that the model is not properly parsing your request. Try:
+   - Using a different model
+   - Updating Ollama to the latest version
+   - Using the custom prompt provided
+
+4. **Explicit 4K requests**: When requesting 4K movies, be explicit: "add [movie name] in 4K"
+
+See [ollama_config.yaml](/auxiliary/ollama_config.yaml) for detailed setup instructions.
 
 > Note: The services can be tested directly in **Settings > Developer Options > Actions**. Here you may find the service, send parameters and observe the response.
 If any errors, check the home assistant logs.
@@ -368,13 +402,14 @@ automation:
 - **Smart Season Suggestions**: Automatic suggestions for missing seasons when adding existing TV shows
 - **Detailed Season Information**: Rich season-specific status details including which seasons are downloading, available, or pending
 - **Episode-level Information**: Detailed progress tracking for individual episodes within seasons
+- **4K Movie Support**: Request movies in 4K quality with a simple parameter
 
 ### Upcoming Enhancements 🚀
 - **Radarr/Sonarr Feature Parity**: Update the direct Radarr/Sonarr mode to have the same rich service calls and sensor support as the Overseerr/Jellyseerr mode
 - **Smarter Status Checks**: Enhance the `check_media_status` service to query Radarr/Sonarr directly if a movie is not found or is stuck in a non-downloading state in Overseerr
 - **Availability Sync**: Improve the status check to poll Radarr/Sonarr directly if a request is 100% downloaded in the client but not yet marked as "Available" in Overseerr
 - **Post-Action Sync**: Add a post-action hook to the `add_media` and `remove_media` services to automatically trigger the media availability and download sync jobs in Overseerr, ensuring the UI reflects changes almost instantly
-- **Quality Profile & 4K Support**: Add support for specifying quality profiles (e.g., "in 1080p", "in highest quality") and making 4K requests directly in the service call
+- **Quality Profile Support**: Add support for specifying quality profiles (e.g., "in 1080p", "in highest quality") for both movies and TV shows
 - **Extended LLM Integration**: Improved compatibility with OpenAI and other conversation agents beyond Ollama
 - **Improved Error Handling**: More graceful recovery from API errors and better feedback to users
 - **Enhanced Monitoring**: Additional sensors for system performance and request history analytics

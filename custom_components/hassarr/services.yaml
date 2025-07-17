@@ -34,6 +34,13 @@ add_media:
       example: "remaining seasons"
       selector:
         text:
+    is4k:
+      description: "Request movie in 4K quality (only applicable for movies, not TV shows)"
+      required: false
+      example: true
+      default: false
+      selector:
+        boolean:
   response:
     optional: true
 
