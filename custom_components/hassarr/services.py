@@ -221,7 +221,8 @@ class OverseerrAPI:
         
         # For TV shows, add seasons parameter with better validation
         if media_type == "tv":
-            if seasons is None or not seasons:
+            # Handle None, empty strings, and empty lists
+            if seasons is None or (isinstance(seasons, str) and not seasons.strip()) or (isinstance(seasons, list) and not seasons):
                 # Default to season 1 if no seasons specified
                 data["seasons"] = [1]
                 _LOGGER.debug(f"No seasons specified for TV show, defaulting to season 1")

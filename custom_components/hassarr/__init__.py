@@ -142,7 +142,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         LLM should provide clean parameters, but we handle common cases as fallback."""
         import re
         
-        if not season_input:
+        # Handle None, empty string, or whitespace-only string
+        if season_input is None or (isinstance(season_input, str) and not season_input.strip()):
             return {"seasons": None, "type": "default"}
         
         season_str = str(season_input).lower().strip()
@@ -356,7 +357,11 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 hass.data[DOMAIN]["last_add_media"] = result
                 return result
 
-            season_info = f" (season: {season_input})" if season_input is not None else ""
+            # Handle null/None season gracefully
+            season_info = ""
+            if season_input is not None and str(season_input).strip():
+                season_info = f" (season: {season_input})"
+                
             quality_info = " in 4K" if is4k else ""
             _LOGGER.info(f"Adding media to Overseerr: {title}{season_info}{quality_info} (called by {user_context['username']})")
             api = hass.data[DOMAIN]["api"]
