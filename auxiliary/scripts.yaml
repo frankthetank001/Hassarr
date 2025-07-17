@@ -82,7 +82,7 @@ hassarr_add_media:
     - service: hassarr.add_media
       data:
         title: "{{ title }}"
-        season: "{{ season }}"
+        season: "{{ season | default(none) }}"
         is4k: "{{ is4k | default(false) }}"
       response_variable: add_result
     - stop: ""
