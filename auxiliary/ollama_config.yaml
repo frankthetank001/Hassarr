@@ -1,0 +1,27 @@
+# Ollama Configuration for Hassarr
+# This file contains instructions for setting up Ollama with the custom prompt
+
+# Instructions:
+# 1. In Home Assistant, go to Settings > Devices & Services > Ollama
+# 2. Click on Configure for your Ollama instance
+# 3. Under "Conversation", enable "Assist" and "Control Home Assistant"
+# 4. Click on "Conversation" tab
+# 5. In the "System prompt" field, paste the content from ollama_prompt.yaml
+# 6. Save the configuration
+
+# Notes:
+# - Make sure you're using a model that supports tools (like llama3.2, qwen 7b)
+# - The model should be at least 7B parameters in size
+# - If you still have issues, try updating Ollama to the latest version
+
+# Recommended models:
+# - llama3.2 (default is good)
+# - qwen2.5:7b
+# - phi4-mini (if available)
+
+# Troubleshooting:
+# If you see "Unga Bunga" responses or "does not support tools" errors:
+# 1. Make sure your model supports tool use
+# 2. Try updating Ollama to the latest version
+# 3. Check that the custom prompt is properly set
+# 4. Restart the Ollama service and Home Assistant 
