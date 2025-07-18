@@ -171,7 +171,6 @@ hassarr_get_media:
       data:
         filter: "{{ filter | default('all') }}"
         take: 100
-        skip: 0
       response_variable: media_result
     - stop: ""
       response_variable: media_result
