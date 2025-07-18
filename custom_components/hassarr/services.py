@@ -145,10 +145,147 @@ class OverseerrAPI:
             self.last_error = error_text
             return None
     
-    async def get_requests(self) -> Optional[Dict]:
-        """Get all active requests."""
-        endpoint = "api/v1/request"
-        return await self._make_request(endpoint)
+    async def get_requests(self, filter_type: str = "all", take: int = 100, skip: int = 0) -> Optional[Dict]:
+        """Get requests with optional filtering and pagination.
+        
+        Args:
+            filter_type: Filter type (all, available, partial, allavailable, processing, pending, deleted)
+            take: Number of results to return (page size)
+            skip: Number of results to skip (for pagination)
+        """
+        endpoint = f"api/v1/request?take={take}&skip={skip}"
+        
+        # Get requests with pagination
+        result = await self._make_request(endpoint)
+        
+        # Apply filtering if needed
+        if result and filter_type != "all":
+            result = self._filter_requests(result, filter_type)
+        
+        return result
+    
+    async def get_media(self, filter_type: str = "all", media_type: str = "all", take: int = 20, skip: int = 0, sort: str = "mediaAdded") -> Optional[Dict]:
+        """Get media from Overseerr using the /api/v1/media endpoint.
+        
+        Args:
+            filter_type: Filter type (all, available, partial, allavailable, processing, pending, deleted)
+            media_type: Media type filter (all, movie, tv)
+            take: Number of results to return (page size)
+            skip: Number of results to skip (for pagination)
+            sort: Sort order (mediaAdded, title, etc.)
+        """
+        # Validate filter type
+        valid_filters = ["all", "available", "partial", "allavailable", "processing", "pending", "deleted"]
+        if filter_type not in valid_filters:
+            _LOGGER.warning(f"Invalid filter type '{filter_type}', defaulting to 'all'")
+            filter_type = "all"
+        
+        # Validate media type
+        valid_media_types = ["all", "movie", "tv"]
+        if media_type not in valid_media_types:
+            _LOGGER.warning(f"Invalid media type '{media_type}', defaulting to 'all'")
+            media_type = "all"
+        
+        endpoint = f"api/v1/media?filter={filter_type}&take={take}&skip={skip}&sort={sort}"
+        result = await self._make_request(endpoint)
+        
+        # Apply media type filtering if needed
+        if result and media_type != "all":
+            result = self._filter_media_by_type(result, media_type)
+        
+        return result
+    
+    def _filter_requests(self, requests_data: Dict, filter_type: str) -> Dict:
+        """Filter requests client-side based on media status.
+        
+        Args:
+            requests_data: Raw requests data from API
+            filter_type: Filter type to apply
+        """
+        if not requests_data or not requests_data.get("results"):
+            return requests_data
+        
+        filtered_results = []
+        
+        for request in requests_data["results"]:
+            media = request.get("media", {})
+            media_status = media.get("status", 1)
+            
+            # Apply filter based on media status
+            include_request = False
+            
+            if filter_type == "pending":
+                include_request = media_status == 2
+            elif filter_type == "processing":
+                include_request = media_status == 3
+            elif filter_type == "partial":
+                include_request = media_status == 4
+            elif filter_type == "available":
+                include_request = media_status == 5
+            elif filter_type == "allavailable":
+                include_request = media_status in [4, 5]  # Partial or fully available
+            elif filter_type == "deleted":
+                include_request = media_status == 7
+            else:
+                include_request = True  # "all" or unknown filter
+            
+            if include_request:
+                filtered_results.append(request)
+        
+        # Update the results and counts
+        filtered_data = requests_data.copy()
+        filtered_data["results"] = filtered_results
+        filtered_data["totalResults"] = len(filtered_results)
+        filtered_data["pageInfo"] = {
+            "page": 1,
+            "pages": 1,
+            "pageSize": len(filtered_results),
+            "results": len(filtered_results)
+        }
+        
+        return filtered_data
+    
+    def _filter_media_by_type(self, media_data: Dict, media_type: str) -> Dict:
+        """Filter media client-side based on media type.
+        
+        Args:
+            media_data: Raw media data from API
+            media_type: Media type to filter by (movie, tv)
+        """
+        if not media_data or not media_data.get("results"):
+            return media_data
+        
+        filtered_results = []
+        
+        for media in media_data["results"]:
+            include_media = False
+            
+            # Get media type from the media object
+            current_media_type = media.get("mediaType", "unknown")
+            
+            if media_type == "movie":
+                include_media = current_media_type == "movie"
+            elif media_type == "tv":
+                include_media = current_media_type == "tv"
+            else:
+                include_media = True  # "all" or unknown filter
+            
+            if include_media:
+                filtered_results.append(media)
+        
+        # Update the results and counts
+        filtered_data = media_data.copy()
+        filtered_data["results"] = filtered_results
+        filtered_data["totalResults"] = len(filtered_results)
+        if "pageInfo" in filtered_data:
+            filtered_data["pageInfo"] = {
+                "page": 1,
+                "pages": 1,
+                "pageSize": len(filtered_results),
+                "results": len(filtered_results)
+            }
+        
+        return filtered_data
     
     async def search_media(self, query: str) -> Optional[Dict]:
         """Search for media in Overseerr."""
@@ -556,6 +693,83 @@ class LLMResponseBuilder:
         }
     
     @staticmethod
+    def _extract_season_details_from_media(media_data: Dict, media_details: Dict = None) -> Dict:
+        """Extract detailed season information from media data (/api/v1/media endpoint)."""
+        if not media_data:
+            return None
+        
+        seasons = media_data.get("seasons", [])
+        if not seasons:
+            return None
+        
+        # Process each season in the media data
+        season_details = []
+        requested_seasons = []
+        
+        for season in seasons:
+            season_number = season.get("seasonNumber")
+            season_status = season.get("status")
+            created_at = season.get("createdAt", "")
+            updated_at = season.get("updatedAt", "")
+            
+            if season_number:
+                requested_seasons.append(season_number)
+                
+                # Convert season status to human readable
+                # Season status uses MEDIA_STATUS mapping for /media endpoint
+                status_text = OverseerrStatusMaps.get_media_status_text(season_status)
+                
+                season_info = {
+                    "season_number": season_number,
+                    "status": season_status,
+                    "status_text": status_text,
+                    "requested_date": created_at,
+                    "updated_date": updated_at,
+                    "is_available": season_status == 5,
+                    "is_downloading": season_status == 3,  # Status 3 = Processing (downloading)
+                    "is_pending": season_status == 2
+                }
+                season_details.append(season_info)
+        
+        # Get total seasons information from media_details if available
+        total_seasons = 0
+        all_seasons = []
+        missing_seasons = []
+        
+        if media_details:
+            total_seasons = media_details.get("numberOfSeasons", 0)
+            if total_seasons > 0:
+                all_seasons = list(range(1, total_seasons + 1))
+                missing_seasons = [s for s in all_seasons if s not in requested_seasons]
+        
+        # Calculate season statistics
+        downloading_seasons = [s["season_number"] for s in season_details if s["is_downloading"]]
+        available_seasons = [s["season_number"] for s in season_details if s["is_available"]]
+        pending_seasons = [s["season_number"] for s in season_details if s["is_pending"]]
+        
+        return {
+            "requested_seasons": sorted(requested_seasons),
+            "season_count": len(requested_seasons),
+            "season_details": season_details,
+            "has_multiple_seasons": len(requested_seasons) > 1,
+            # Enhanced season information
+            "total_seasons": total_seasons,
+            "all_seasons": all_seasons,
+            "missing_seasons": sorted(missing_seasons),
+            "downloading_seasons": sorted(downloading_seasons),
+            "available_seasons": sorted(available_seasons),
+            "pending_seasons": sorted(pending_seasons),
+            "season_summary": {
+                "requested": len(requested_seasons),
+                "total_available": total_seasons,
+                "missing": len(missing_seasons),
+                "downloading": len(downloading_seasons),
+                "available": len(available_seasons),
+                "pending": len(pending_seasons)
+            }
+        }
+    
+    @staticmethod
     def build_status_response(
         action: str,
         title: str = None,
@@ -611,7 +825,7 @@ class LLMResponseBuilder:
             # Build the structured response
             response = {
                 "action": "found_media",
-                "llm_instructions": "Focus on requested seasons, download progress, and who requested it. Include information about total seasons available and missing seasons when relevant for TV shows.",
+                "llm_instructions": "Focus on requested seasons, download progress, and who requested it. Include information about total seasons available and missing seasons when relevant for TV shows. For available media, provide watch URLs as clickable links.",
                 "searched_title": title,
                 "primary_result": {
                     "search_info": {
@@ -957,9 +1171,20 @@ class LLMResponseBuilder:
         action: str,
         requests_data: Dict = None,
         error_details: str = None,
-        api = None
+        api = None,
+        use_media_endpoint: bool = False,
+        take_limit: int = None
     ) -> Dict:
-        """Build LLM-optimized response for active requests."""
+        """Build LLM-optimized response for active requests.
+        
+        Args:
+            action: Action type
+            requests_data: Data from requests or media endpoint
+            error_details: Error details if any
+            api: API client instance
+            use_media_endpoint: Whether the data comes from /api/v1/media endpoint (for get_all_media service)
+            take_limit: Maximum number of results to include in response
+        """
         
         if action == "connection_error":
             return {
@@ -989,19 +1214,32 @@ class LLMResponseBuilder:
             other_requests = []         # Media Status 1: Unknown and other codes
             
             for request in results:
-                # Use media status if available, fallback to request status
-                media = request.get("media", {})
-                media_status = media.get("status")
-                if media_status is not None:
-                    status = media_status
+                if use_media_endpoint:
+                    # Data comes from /api/v1/media endpoint
+                    media_status = request.get("status")
+                    if media_status is not None:
+                        status = media_status
+                    else:
+                        status = 1
+                    
+                    # Check for active downloads - if there are downloads happening, it's processing
+                    download_status = request.get("downloadStatus", [])
+                    download_status_4k = request.get("downloadStatus4k", [])
+                    has_active_downloads = len(download_status) > 0 or len(download_status_4k) > 0
                 else:
-                    # If no media status, we can't properly categorize, so treat as other
-                    status = 1
-                
-                # Check for active downloads - if there are downloads happening, it's processing
-                download_status = media.get("downloadStatus", [])
-                download_status_4k = media.get("downloadStatus4k", [])
-                has_active_downloads = len(download_status) > 0 or len(download_status_4k) > 0
+                    # Data comes from /api/v1/request endpoint - original logic
+                    media = request.get("media", {})
+                    media_status = media.get("status")
+                    if media_status is not None:
+                        status = media_status
+                    else:
+                        # If no media status, we can't properly categorize, so treat as other
+                        status = 1
+                    
+                    # Check for active downloads - if there are downloads happening, it's processing
+                    download_status = media.get("downloadStatus", [])
+                    download_status_4k = media.get("downloadStatus4k", [])
+                    has_active_downloads = len(download_status) > 0 or len(download_status_4k) > 0
                 
                 # If there are active downloads, prioritize as processing regardless of status
                 if has_active_downloads:
@@ -1026,25 +1264,33 @@ class LLMResponseBuilder:
                                partially_available, failed_requests, other_requests]:
                 request_list.sort(key=lambda x: x.get("createdAt", ""), reverse=True)
             
-            # Build response prioritizing active requests (processing + pending)
+            # Build response with all requests, prioritizing active ones first
             active_requests = []
-            resolved_requests = []
+            all_other_requests = []
+            requests_added = 0
+            max_requests = take_limit or len(results)
             
             # Add processing requests first (highest priority)
             for request in processing_requests:
-                media_details = await LLMResponseBuilder._fetch_media_details_for_request(request, api)
-                active_requests.append(LLMResponseBuilder._build_request_info(request, media_details))
+                if requests_added < max_requests:
+                    media_details = await LLMResponseBuilder._fetch_media_details_for_request(request, api, use_media_endpoint)
+                    active_requests.append(LLMResponseBuilder._build_request_info(request, media_details, use_media_endpoint))
+                    requests_added += 1
             
-            # Add pending requests 
+            # Add pending requests to active requests
             for request in pending_requests:
-                if len(active_requests) < 10:
-                    media_details = await LLMResponseBuilder._fetch_media_details_for_request(request, api)
-                    active_requests.append(LLMResponseBuilder._build_request_info(request, media_details))
+                if requests_added < max_requests:
+                    media_details = await LLMResponseBuilder._fetch_media_details_for_request(request, api, use_media_endpoint)
+                    active_requests.append(LLMResponseBuilder._build_request_info(request, media_details, use_media_endpoint))
+                    requests_added += 1
             
-            # Add a few resolved/completed requests for context
-            for request in available_requests[:3]:  # Show up to 3 recent completed
-                media_details = await LLMResponseBuilder._fetch_media_details_for_request(request, api)
-                resolved_requests.append(LLMResponseBuilder._build_request_info(request, media_details))
+            # Add all other requests (available, failed, partial, etc.)
+            for request_list in [available_requests, partially_available, failed_requests, other_requests]:
+                for request in request_list:
+                    if requests_added < max_requests:
+                        media_details = await LLMResponseBuilder._fetch_media_details_for_request(request, api, use_media_endpoint)
+                        all_other_requests.append(LLMResponseBuilder._build_request_info(request, media_details, use_media_endpoint))
+                        requests_added += 1
             
             # Count totals
             total_requests = len(results)
@@ -1075,6 +1321,7 @@ class LLMResponseBuilder:
             return {
                 "action": "requests_found",
                 "total_requests": total_requests,
+                "returned_requests": requests_added,
                 "status_breakdown": {
                     "processing_count": processing_count,
                     "pending_count": pending_count, 
@@ -1084,11 +1331,11 @@ class LLMResponseBuilder:
                     "other_count": other_count
                 },
                 "active_requests": active_requests,
-                "recent_completed": resolved_requests,
-                "message": f"Found {total_requests} total requests ({breakdown_text})",
+                "other_requests": all_other_requests,
+                "message": f"Found {total_requests} total requests, showing {requests_added} ({breakdown_text})",
                 "llm_instructions": {
-                    "response_guidance": "Focus on active requests (downloading/pending) and include specific season information for TV shows. Mention which seasons are downloading, available, or pending.",
-                    "priority_note": "Processing requests are shown first, then pending requests",
+                    "response_guidance": "Focus on active requests (downloading/pending) first, then show other requests. Include specific season information for TV shows. For available media, provide watch URLs as clickable links.",
+                    "priority_note": "Active requests (processing/pending) are shown first, followed by all other requests",
                     "status_meanings": {
                         "processing": "Currently downloading or being processed", 
                         "pending": "Waiting for approval",
@@ -1098,7 +1345,8 @@ class LLMResponseBuilder:
                     },
                     "season_info_note": "For TV shows, season-specific details are included showing which specific seasons are downloading, available, or pending",
                     "episode_info_note": "Download progress includes individual episode information when available",
-                    "completed_note": "Recent completed requests are included for context"
+                    "structure_note": "Results are limited by the take parameter. Active requests are prioritized first.",
+                    "watch_url_note": "For available media, watch_url contains the direct link to watch the content. Always provide this as a clickable link to the user."
                 },
                 "next_steps": {
                     "suggestion": "Use check_media_status with a specific title for detailed progress information",
@@ -1133,12 +1381,24 @@ class LLMResponseBuilder:
         }
 
     @staticmethod
-    async def _fetch_media_details_for_request(request: Dict, api) -> Dict:
-        """Fetch media details for a request using the TMDB ID."""
+    async def _fetch_media_details_for_request(request: Dict, api, is_media_endpoint: bool = False) -> Dict:
+        """Fetch media details for a request using the TMDB ID.
+        
+        Args:
+            request: Request data (from /request endpoint) or media data (from /media endpoint)
+            api: API client instance
+            is_media_endpoint: True if request comes from /api/v1/media endpoint
+        """
         try:
-            media = request.get("media", {})
-            media_type = media.get("mediaType", "movie")
-            tmdb_id = media.get("tmdbId")
+            if is_media_endpoint:
+                # Data comes from /api/v1/media endpoint - structure is different
+                media_type = request.get("mediaType", "movie")
+                tmdb_id = request.get("tmdbId")
+            else:
+                # Data comes from /api/v1/request endpoint - original structure
+                media = request.get("media", {})
+                media_type = media.get("mediaType", "movie")
+                tmdb_id = media.get("tmdbId")
             
             if tmdb_id:
                 details = await api.get_media_details(media_type, tmdb_id)
@@ -1148,77 +1408,158 @@ class LLMResponseBuilder:
             return {}
     
     @staticmethod
-    def _build_request_info(request: Dict, media_details: Dict = None) -> Dict:
-        """Build formatted request information for LLM consumption."""
-        media = request.get("media", {})
+    def _build_request_info(request: Dict, media_details: Dict = None, is_media_endpoint: bool = False) -> Dict:
+        """Build formatted request information for LLM consumption.
         
-        # Determine media type and title
-        media_type = "movie" if request.get("type") == "movie" else "tv"
-        
-        # Get title from media_details if available, otherwise fallback to media object
-        if media_details:
-            title = media_details.get("title") or media_details.get("name", "Unknown Title")
+        Args:
+            request: Request data (from /request endpoint) or media data (from /media endpoint)
+            media_details: Additional media details from TMDB
+            is_media_endpoint: True if request comes from /api/v1/media endpoint
+        """
+        if is_media_endpoint:
+            # Data comes from /api/v1/media endpoint - structure is different
+            media_type = request.get("mediaType", "movie")
+            
+            # Get title from media_details if available, otherwise fallback to request object
+            if media_details:
+                title = media_details.get("title") or media_details.get("name", "Unknown Title")
+            else:
+                title = "Unknown Title"  # /media endpoint doesn't include title directly
         else:
-            title = media.get("title") or media.get("name", "Unknown Title")
+            # Data comes from /api/v1/request endpoint - original structure
+            media = request.get("media", {})
+            
+            # Determine media type and title
+            media_type = "movie" if request.get("type") == "movie" else "tv"
+            
+            # Get title from media_details if available, otherwise fallback to media object
+            if media_details:
+                title = media_details.get("title") or media_details.get("name", "Unknown Title")
+            else:
+                title = media.get("title") or media.get("name", "Unknown Title")
         
-        # Format release date/year
-        release_date = media.get("releaseDate") or media.get("firstAirDate", "")
-        year = release_date[:4] if release_date else "Unknown"
-        
-        # Prioritize media status over request status when available
-        # This fixes inconsistency where request might be "pending" but media is "processing"
-        media_status = media.get("status")
-        if media_status is not None:
-            # Use media status (more accurate for download state)
-            status = OverseerrStatusMaps.get_media_status(media_status)
+        if is_media_endpoint:
+            # Data comes from /api/v1/media endpoint
+            # Format release date/year from media_details
+            if media_details:
+                release_date = media_details.get("releaseDate") or media_details.get("firstAirDate", "")
+            else:
+                release_date = ""
+            year = release_date[:4] if release_date else "Unknown"
+            
+            # Use media status directly (more accurate for download state)
+            media_status = request.get("status")
+            status = OverseerrStatusMaps.get_media_status(media_status) if media_status is not None else "unknown"
+            
+            # Format creation date
+            created_at = request.get("createdAt", "")
+            if created_at:
+                # Convert ISO date to human readable
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    created_date = dt.strftime("%Y-%m-%d %H:%M")
+                except:
+                    created_date = created_at
+            else:
+                created_date = "Unknown"
+            
+            # Get overview from media_details (primary source for /media endpoint)
+            if media_details:
+                overview = media_details.get("overview", "")
+            else:
+                overview = ""
+            
+            # Truncate overview if too long
+            if len(overview) > 200:
+                overview = overview[:200] + "..."
+            
+            # Extract download information if available
+            download_info = LLMResponseBuilder._build_download_info(request)  # request is actually media data
         else:
-            # Fallback to request status if media status not available
-            status = OverseerrStatusMaps.get_request_status(request.get("status", 1))
-        
-        # Format creation date
-        created_at = request.get("createdAt", "")
-        if created_at:
-            # Convert ISO date to human readable
-            try:
-                from datetime import datetime
-                dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-                created_date = dt.strftime("%Y-%m-%d %H:%M")
-            except:
-                created_date = created_at
-        else:
-            created_date = "Unknown"
-        
-        # Get overview from media_details if available (more accurate)
-        if media_details:
-            overview = media_details.get("overview", "")
-        else:
-            overview = media.get("overview", "")
-        
-        # Truncate overview if too long
-        if len(overview) > 200:
-            overview = overview[:200] + "..."
-        
-        # Extract download information if available
-        download_info = LLMResponseBuilder._build_download_info(media)
+            # Data comes from /api/v1/request endpoint - original logic
+            media = request.get("media", {})
+            
+            # Format release date/year
+            release_date = media.get("releaseDate") or media.get("firstAirDate", "")
+            year = release_date[:4] if release_date else "Unknown"
+            
+            # Prioritize media status over request status when available
+            # This fixes inconsistency where request might be "pending" but media is "processing"
+            media_status = media.get("status")
+            if media_status is not None:
+                # Use media status (more accurate for download state)
+                status = OverseerrStatusMaps.get_media_status(media_status)
+            else:
+                # Fallback to request status if media status not available
+                status = OverseerrStatusMaps.get_request_status(request.get("status", 1))
+            
+            # Format creation date
+            created_at = request.get("createdAt", "")
+            if created_at:
+                # Convert ISO date to human readable
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    created_date = dt.strftime("%Y-%m-%d %H:%M")
+                except:
+                    created_date = created_at
+            else:
+                created_date = "Unknown"
+            
+            # Get overview from media_details if available (more accurate)
+            if media_details:
+                overview = media_details.get("overview", "")
+            else:
+                overview = media.get("overview", "")
+            
+            # Truncate overview if too long
+            if len(overview) > 200:
+                overview = overview[:200] + "..."
+            
+            # Extract download information if available
+            download_info = LLMResponseBuilder._build_download_info(media)
         
         # Extract detailed season information for TV shows
         season_info = None
         if media_type == "tv":
-            season_info = LLMResponseBuilder._extract_season_details_from_request(request, media_details)
+            if is_media_endpoint:
+                # For /media endpoint, season info is in seasons array
+                season_info = LLMResponseBuilder._extract_season_details_from_media(request, media_details)
+            else:
+                # For /request endpoint, use original method
+                season_info = LLMResponseBuilder._extract_season_details_from_request(request, media_details)
         
-        result = {
-            "title": title,
-            "year": year,
-            "media_type": media_type,
-            "status": status,
-            "tmdb_id": media.get("tmdbId", 0),
-            "media_id": media.get("id", 0),
-            "request_id": request.get("id", 0),
-            "requested_date": created_date,
-            "requested_by": request.get("requestedBy", {}).get("displayName", "Unknown User"),
-            "overview": overview,
-            "download_info": download_info
-        }
+        if is_media_endpoint:
+            result = {
+                "title": title,
+                "year": year,
+                "media_type": media_type,
+                "status": status,
+                "tmdb_id": request.get("tmdbId", 0),
+                "media_id": request.get("id", 0),
+                "request_id": None,  # /media endpoint doesn't have request ID
+                "requested_date": created_date,
+                "requested_by": "System",  # /media endpoint doesn't have requestedBy
+                "overview": overview,
+                "download_info": download_info,
+                "watch_url": request.get("mediaUrl")  # Watch URL for available media
+            }
+        else:
+            result = {
+                "title": title,
+                "year": year,
+                "media_type": media_type,
+                "status": status,
+                "tmdb_id": media.get("tmdbId", 0),
+                "media_id": media.get("id", 0),
+                "request_id": request.get("id", 0),
+                "requested_date": created_date,
+                "requested_by": request.get("requestedBy", {}).get("displayName", "Unknown User"),
+                "overview": overview,
+                "download_info": download_info,
+                "watch_url": media.get("mediaUrl")  # Watch URL for available media
+            }
         
         # Add season information for TV shows
         if season_info:

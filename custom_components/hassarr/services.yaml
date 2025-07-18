@@ -74,9 +74,33 @@ remove_media:
   response:
     optional: true
 
-get_active_requests:
-  description: "Get current active requests with LLM-optimized response (focuses on processing requests, ordered by date)"
-  fields: {}
+get_requests:
+  description: "Get requests with LLM-optimized response (supports filtering by status)"
+  fields:
+    filter:
+      description: "Filter requests by status (all, available, partial, allavailable, processing, pending, deleted)"
+      required: false
+      example: "all"
+      default: "all"
+      selector:
+        select:
+          options:
+            - "all"
+            - "available"
+            - "partial"
+            - "allavailable"
+            - "processing"
+            - "pending"
+            - "deleted"
+    take:
+      description: "Number of results to return (maximum)"
+      required: false
+      example: 10
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 100
   response:
     optional: true
 
@@ -95,5 +119,46 @@ run_job:
 get_resolved_requests:
   description: "Get completed, failed, and partially available requests with LLM-optimized response"
   fields: {}
+  response:
+    optional: true
+
+get_media:
+  description: "Get media from library with LLM-optimized response (uses /api/v1/media endpoint for comprehensive view)"
+  fields:
+    filter:
+      description: "Filter media by status (all, available, partial, allavailable, processing, pending, deleted)"
+      required: false
+      example: "all"
+      default: "all"
+      selector:
+        select:
+          options:
+            - "all"
+            - "available"
+            - "partial"
+            - "allavailable"
+            - "processing"
+            - "pending"
+            - "deleted"
+    media_type:
+      description: "Filter by media type (all, movie, tv)"
+      required: false
+      example: "all"
+      default: "all"
+      selector:
+        select:
+          options:
+            - "all"
+            - "movie"
+            - "tv"
+    take:
+      description: "Number of results to return (maximum)"
+      required: false
+      example: 10
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 100
   response:
     optional: true

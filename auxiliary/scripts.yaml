@@ -2,9 +2,7 @@
 # Note: Keep this filename comment for navigation and organization
 # This file exposes Hassarr services as script entities for chat assistant integration
 
-# =============================================================================
-# HASSARR CHAT ASSISTANT SCRIPTS
-# =============================================================================
+# Hassarr Chat Assistant Scripts
 # These scripts wrap the Hassarr services to make them available as entities
 # that the chat assistant can execute. Each script calls the corresponding
 # service and returns structured JSON responses for LLM interpretation.
@@ -117,16 +115,77 @@ hassarr_remove_media:
     - stop: ""
       response_variable: remove_result
 
-hassarr_get_active_requests:
-  alias: "Get Active Downloads from Overseerr"
-  description: "Get information about currently active downloads and pending requests, prioritizing items that are actively downloading."
+hassarr_get_requests:
+  alias: "Get Requests from Overseerr"
+  description: "Get information about requests from Overseerr with optional filtering by status (all, pending, processing, available, etc.)"
   icon: mdi:download-multiple
   mode: single
+  fields:
+    filter:
+      name: "Filter (Optional)"
+      description: "Filter requests by status: all, pending, processing, available, partial, allavailable, deleted. Leave empty for all requests."
+      required: false
+      selector:
+        select:
+          options:
+            - "all"
+            - "pending"
+            - "processing"
+            - "available"
+            - "partial"
+            - "allavailable"
+            - "deleted"
+      default: "all"
   sequence:
-    - service: hassarr.get_active_requests
+    - service: hassarr.get_requests
+      data:
+        filter: "{{ filter | default('all') }}"
+        take: 10
       response_variable: requests_result
     - stop: ""
       response_variable: requests_result
+
+hassarr_get_media:
+  alias: "Get Media from Overseerr Library"
+  description: "Get comprehensive media information from Overseerr library with filtering support. Shows all media in the system, not just requested items."
+  icon: mdi:movie-open
+  mode: single
+  fields:
+    filter:
+      name: "Filter (Optional)"
+      description: "Filter media by status: all, pending, processing, available, partial, allavailable, deleted. Leave empty for all media."
+      required: false
+      selector:
+        select:
+          options:
+            - "all"
+            - "pending"
+            - "processing"
+            - "available"
+            - "partial"
+            - "allavailable"
+            - "deleted"
+      default: "all"
+    media_type:
+      name: "Media Type (Optional)"
+      description: "Filter by media type: all, movie, tv. Leave empty for all media types."
+      required: false
+      selector:
+        select:
+          options:
+            - "all"
+            - "movie"
+            - "tv"
+      default: "all"
+  sequence:
+    - service: hassarr.get_media
+      data:
+        filter: "{{ filter | default('all') }}"
+        media_type: "{{ media_type | default('all') }}"
+        take: 10
+      response_variable: media_result
+    - stop: ""
+      response_variable: media_result
 
 hassarr_run_job:
   alias: "Run Overseerr Job"
@@ -159,3 +218,106 @@ hassarr_test_connection:
       response_variable: connection_result
     - stop: ""
       response_variable: connection_result
+
+# Convenient aliases for common requests
+# These are shortcut scripts for common LLM queries to make interaction more natural
+
+hassarr_get_pending_requests:
+  alias: "Get Pending Requests"
+  description: "Get all pending requests waiting for approval"
+  icon: mdi:clock-outline
+  mode: single
+  sequence:
+    - service: hassarr.get_requests
+      data:
+        filter: "pending"
+        take: 10
+      response_variable: pending_result
+    - stop: ""
+      response_variable: pending_result
+
+hassarr_get_downloading_media:
+  alias: "Get Downloading Media"
+  description: "Get all media currently being downloaded or processed"
+  icon: mdi:download
+  mode: single
+  sequence:
+    - service: hassarr.get_media
+      data:
+        filter: "processing"
+        take: 10
+      response_variable: downloading_result
+    - stop: ""
+      response_variable: downloading_result
+
+hassarr_get_available_media:
+  alias: "Get Available Media"
+  description: "Get all media that is available in the library"
+  icon: mdi:check-circle
+  mode: single
+  sequence:
+    - service: hassarr.get_media
+      data:
+        filter: "available"
+        take: 10
+      response_variable: available_result
+    - stop: ""
+      response_variable: available_result
+
+hassarr_get_movies:
+  alias: "Get Movies"
+  description: "Get all movies from the library"
+  icon: mdi:movie
+  mode: single
+  sequence:
+    - service: hassarr.get_media
+      data:
+        media_type: "movie"
+        take: 10
+      response_variable: movies_result
+    - stop: ""
+      response_variable: movies_result
+
+hassarr_get_tv_shows:
+  alias: "Get TV Shows"
+  description: "Get all TV shows from the library"
+  icon: mdi:television
+  mode: single
+  sequence:
+    - service: hassarr.get_media
+      data:
+        media_type: "tv"
+        take: 10
+      response_variable: tv_result
+    - stop: ""
+      response_variable: tv_result
+
+hassarr_get_available_movies:
+  alias: "Get Available Movies"
+  description: "Get all movies that are available in the library"
+  icon: mdi:movie-check
+  mode: single
+  sequence:
+    - service: hassarr.get_media
+      data:
+        filter: "available"
+        media_type: "movie"
+        take: 10
+      response_variable: available_movies_result
+    - stop: ""
+      response_variable: available_movies_result
+
+hassarr_get_available_tv_shows:
+  alias: "Get Available TV Shows"
+  description: "Get all TV shows that are available in the library"
+  icon: mdi:television-check
+  mode: single
+  sequence:
+    - service: hassarr.get_media
+      data:
+        filter: "available"
+        media_type: "tv"
+        take: 10
+      response_variable: available_tv_result
+    - stop: ""
+      response_variable: available_tv_result
