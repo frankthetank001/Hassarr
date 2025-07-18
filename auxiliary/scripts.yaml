@@ -140,7 +140,7 @@ hassarr_get_requests:
     - service: hassarr.get_requests
       data:
         filter: "{{ filter | default('all') }}"
-        take: 200
+        take: 10
       response_variable: requests_result
     - stop: ""
       response_variable: requests_result
@@ -182,7 +182,7 @@ hassarr_get_media:
       data:
         filter: "{{ filter | default('all') }}"
         media_type: "{{ media_type | default('all') }}"
-        take: 100
+        take: 10
       response_variable: media_result
     - stop: ""
       response_variable: media_result
@@ -270,7 +270,7 @@ hassarr_get_movies:
     - service: hassarr.get_media
       data:
         media_type: "movie"
-        take: 100
+        take: 10
       response_variable: movies_result
     - stop: ""
       response_variable: movies_result
@@ -284,7 +284,7 @@ hassarr_get_tv_shows:
     - service: hassarr.get_media
       data:
         media_type: "tv"
-        take: 100
+        take: 10
       response_variable: tv_result
     - stop: ""
       response_variable: tv_result
@@ -299,7 +299,7 @@ hassarr_get_available_movies:
       data:
         filter: "available"
         media_type: "movie"
-        take: 100
+        take: 10
       response_variable: available_movies_result
     - stop: ""
       response_variable: available_movies_result
@@ -314,7 +314,7 @@ hassarr_get_available_tv_shows:
       data:
         filter: "available"
         media_type: "tv"
-        take: 100
+        take: 10
       response_variable: available_tv_result
     - stop: ""
       response_variable: available_tv_result
