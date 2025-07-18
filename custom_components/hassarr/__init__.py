@@ -986,7 +986,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         handle_add_media_service, 
         schema=vol.Schema({
             vol.Required("title"): str,
-            vol.Optional("season"): vol.Any(int, str),
+            vol.Optional("season"): vol.Any(int, str, None),
             vol.Optional("is4k"): bool,
         }),
         supports_response=True
