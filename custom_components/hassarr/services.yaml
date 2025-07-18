@@ -76,7 +76,14 @@ remove_media:
 
 get_active_requests:
   description: "Get current active requests with LLM-optimized response (focuses on processing requests, ordered by date)"
-  fields: {}
+  fields:
+    use_media_endpoint:
+      description: "Use /api/v1/media endpoint instead of /api/v1/request (shows all media in system, not just requested)"
+      required: false
+      example: false
+      default: false
+      selector:
+        boolean:
   response:
     optional: true
 
@@ -95,5 +102,43 @@ run_job:
 get_resolved_requests:
   description: "Get completed, failed, and partially available requests with LLM-optimized response"
   fields: {}
+  response:
+    optional: true
+
+get_all_media:
+  description: "Get all media in library with LLM-optimized response (uses /api/v1/media endpoint for comprehensive view)"
+  fields:
+    filter_type:
+      description: "Filter media by status (all, available, partial, allavailable, processing, pending, deleted)"
+      required: false
+      example: "all"
+      default: "all"
+      selector:
+        select:
+          options:
+            - "all"
+            - "available"
+            - "partial"
+            - "allavailable"
+            - "processing"
+            - "pending"
+            - "deleted"
+    take:
+      description: "Number of results to return (page size)"
+      required: false
+      example: 50
+      default: 50
+      selector:
+        number:
+          min: 1
+          max: 200
+    skip:
+      description: "Number of results to skip (for pagination)"
+      required: false
+      example: 0
+      default: 0
+      selector:
+        number:
+          min: 0
   response:
     optional: true

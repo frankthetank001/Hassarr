@@ -12,6 +12,7 @@ SERVICE_ADD_OVERSEERR_TV_SHOW = "add_overseerr_tv_show"
 SERVICE_CHECK_MEDIA_STATUS = "check_media_status"
 SERVICE_REMOVE_MEDIA = "remove_media"
 SERVICE_GET_ACTIVE_REQUESTS = "get_active_requests"
+SERVICE_GET_ALL_MEDIA = "get_all_media"
 SERVICE_SEARCH_MEDIA = "search_media"
 SERVICE_GET_MEDIA_DETAILS = "get_media_details"
 

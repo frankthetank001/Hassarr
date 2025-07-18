@@ -803,44 +803,53 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         """Handle get active requests service call."""
         try:
             user_context = await _get_user_context(call)
-            _LOGGER.info(f"Getting active requests (called by {user_context['username']})")
+            use_media_endpoint = call.data.get("use_media_endpoint", False)
+            endpoint_type = "media" if use_media_endpoint else "requests"
+            _LOGGER.info(f"Getting active {endpoint_type} (called by {user_context['username']})")
             
             # Use the existing API client
             api = hass.data[DOMAIN]["api"]
             
-            # Get all requests
-            requests_data = await api.get_requests()
+            # Get data from appropriate endpoint
+            if use_media_endpoint:
+                # Use the new /api/v1/media endpoint
+                requests_data = await api.get_media(filter_type="all", take=100)  # Get more results
+            else:
+                # Use the original /api/v1/request endpoint
+                requests_data = await api.get_requests()
             
             if requests_data is None:
                 result = await LLMResponseBuilder.build_active_requests_response(
                     "connection_error",
-                    error_details="Failed to retrieve requests from Overseerr API"
+                    error_details=f"Failed to retrieve {endpoint_type} from Overseerr API"
                 )
                 result["user_context"] = user_context
                 hass.data[DOMAIN]["last_active_requests"] = result
-                _LOGGER.error("Failed to get active requests - API returned None")
+                _LOGGER.error(f"Failed to get active {endpoint_type} - API returned None")
                 return result
             
-            # Check if we have any requests
+            # Check if we have any results
             if not requests_data.get("results") or len(requests_data.get("results", [])) == 0:
                 result = await LLMResponseBuilder.build_active_requests_response(
                     "no_requests",
-                    requests_data=requests_data
+                    requests_data=requests_data,
+                    use_media_endpoint=use_media_endpoint
                 )
                 result["user_context"] = user_context
                 hass.data[DOMAIN]["last_active_requests"] = result
-                _LOGGER.info("No active requests found")
+                _LOGGER.info(f"No active {endpoint_type} found")
                 return result
             
-            # We have requests - build the response
+            # We have results - build the response
             result = await LLMResponseBuilder.build_active_requests_response(
                 "requests_found",
                 requests_data=requests_data,
-                api=api
+                api=api,
+                use_media_endpoint=use_media_endpoint
             )
             result["user_context"] = user_context
             hass.data[DOMAIN]["last_active_requests"] = result
-            _LOGGER.info(f"Retrieved {len(requests_data.get('results', []))} requests from Overseerr")
+            _LOGGER.info(f"Retrieved {len(requests_data.get('results', []))} {endpoint_type} from Overseerr")
             return result
             
         except Exception as e:
@@ -851,6 +860,67 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             )
             result["user_context"] = await _get_user_context(call)
             hass.data[DOMAIN]["last_active_requests"] = result
+            return result
+
+    async def handle_get_all_media_service(call: ServiceCall) -> dict:
+        """Handle get all media service call using /api/v1/media endpoint."""
+        try:
+            user_context = await _get_user_context(call)
+            filter_type = call.data.get("filter_type", "all")
+            take = call.data.get("take", 50)
+            skip = call.data.get("skip", 0)
+            
+            _LOGGER.info(f"Getting all media (filter={filter_type}, take={take}, skip={skip}) called by {user_context['username']}")
+            
+            # Use the existing API client
+            api = hass.data[DOMAIN]["api"]
+            
+            # Get media data from /api/v1/media endpoint
+            media_data = await api.get_media(filter_type=filter_type, take=take, skip=skip)
+            
+            if media_data is None:
+                result = await LLMResponseBuilder.build_active_requests_response(
+                    "connection_error",
+                    error_details="Failed to retrieve media from Overseerr API"
+                )
+                result["user_context"] = user_context
+                hass.data[DOMAIN]["last_all_media"] = result
+                _LOGGER.error("Failed to get all media - API returned None")
+                return result
+            
+            # Check if we have any results
+            if not media_data.get("results") or len(media_data.get("results", [])) == 0:
+                result = await LLMResponseBuilder.build_active_requests_response(
+                    "no_requests",
+                    requests_data=media_data,
+                    use_media_endpoint=True
+                )
+                result["user_context"] = user_context
+                hass.data[DOMAIN]["last_all_media"] = result
+                _LOGGER.info("No media found")
+                return result
+            
+            # We have results - build the response using media endpoint format
+            result = await LLMResponseBuilder.build_active_requests_response(
+                "requests_found",
+                requests_data=media_data,
+                api=api,
+                use_media_endpoint=True
+            )
+            result["user_context"] = user_context
+            result["pagination_info"] = media_data.get("pageInfo", {})
+            hass.data[DOMAIN]["last_all_media"] = result
+            _LOGGER.info(f"Retrieved {len(media_data.get('results', []))} media items from Overseerr")
+            return result
+            
+        except Exception as e:
+            _LOGGER.error(f"Error getting all media: {e}")
+            result = await LLMResponseBuilder.build_active_requests_response(
+                "connection_error",
+                error_details=str(e)
+            )
+            result["user_context"] = await _get_user_context(call)
+            hass.data[DOMAIN]["last_all_media"] = result
             return result
 
     async def handle_run_job_service(call: ServiceCall) -> dict:
@@ -1020,7 +1090,22 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         DOMAIN, 
         "get_active_requests", 
         handle_get_active_requests_service, 
-        schema=vol.Schema({}),
+        schema=vol.Schema({
+            vol.Optional("use_media_endpoint"): bool,
+        }),
+        supports_response=True
+    )
+    
+    # Register the get all media service
+    hass.services.async_register(
+        DOMAIN, 
+        "get_all_media", 
+        handle_get_all_media_service, 
+        schema=vol.Schema({
+            vol.Optional("filter_type"): str,
+            vol.Optional("take"): int,
+            vol.Optional("skip"): int,
+        }),
         supports_response=True
     )
     
@@ -1035,7 +1120,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         supports_response=True
     )
     
-    _LOGGER.info("Hassarr services registered successfully (test_connection, check_media_status, add_media, search_media, remove_media, get_active_requests, run_job)")
+    _LOGGER.info("Hassarr services registered successfully (test_connection, check_media_status, add_media, search_media, remove_media, get_active_requests, get_all_media, run_job)")
     
     return True
 
@@ -1051,6 +1136,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     hass.services.async_remove(DOMAIN, "search_media")
     hass.services.async_remove(DOMAIN, "remove_media")
     hass.services.async_remove(DOMAIN, "get_active_requests")
+    hass.services.async_remove(DOMAIN, "get_all_media")
     hass.services.async_remove(DOMAIN, "run_job")
     
     # Clean up data
