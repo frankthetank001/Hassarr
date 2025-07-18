@@ -825,7 +825,7 @@ class LLMResponseBuilder:
             # Build the structured response
             response = {
                 "action": "found_media",
-                "llm_instructions": "Focus on requested seasons, download progress, and who requested it. Include information about total seasons available and missing seasons when relevant for TV shows.",
+                "llm_instructions": "Focus on requested seasons, download progress, and who requested it. Include information about total seasons available and missing seasons when relevant for TV shows. For available media, provide watch URLs as clickable links.",
                 "searched_title": title,
                 "primary_result": {
                     "search_info": {
@@ -1334,7 +1334,7 @@ class LLMResponseBuilder:
                 "other_requests": all_other_requests,
                 "message": f"Found {total_requests} total requests, showing {requests_added} ({breakdown_text})",
                 "llm_instructions": {
-                    "response_guidance": "Focus on active requests (downloading/pending) first, then show other requests. Include specific season information for TV shows.",
+                    "response_guidance": "Focus on active requests (downloading/pending) first, then show other requests. Include specific season information for TV shows. For available media, provide watch URLs as clickable links.",
                     "priority_note": "Active requests (processing/pending) are shown first, followed by all other requests",
                     "status_meanings": {
                         "processing": "Currently downloading or being processed", 
@@ -1345,7 +1345,8 @@ class LLMResponseBuilder:
                     },
                     "season_info_note": "For TV shows, season-specific details are included showing which specific seasons are downloading, available, or pending",
                     "episode_info_note": "Download progress includes individual episode information when available",
-                    "structure_note": "Results are limited by the take parameter. Active requests are prioritized first."
+                    "structure_note": "Results are limited by the take parameter. Active requests are prioritized first.",
+                    "watch_url_note": "For available media, watch_url contains the direct link to watch the content. Always provide this as a clickable link to the user."
                 },
                 "next_steps": {
                     "suggestion": "Use check_media_status with a specific title for detailed progress information",
@@ -1541,7 +1542,8 @@ class LLMResponseBuilder:
                 "requested_date": created_date,
                 "requested_by": "System",  # /media endpoint doesn't have requestedBy
                 "overview": overview,
-                "download_info": download_info
+                "download_info": download_info,
+                "watch_url": request.get("mediaUrl")  # Watch URL for available media
             }
         else:
             result = {
@@ -1555,7 +1557,8 @@ class LLMResponseBuilder:
                 "requested_date": created_date,
                 "requested_by": request.get("requestedBy", {}).get("displayName", "Unknown User"),
                 "overview": overview,
-                "download_info": download_info
+                "download_info": download_info,
+                "watch_url": media.get("mediaUrl")  # Watch URL for available media
             }
         
         # Add season information for TV shows
