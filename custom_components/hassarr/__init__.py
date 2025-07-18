@@ -804,13 +804,15 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         try:
             user_context = await _get_user_context(call)
             filter_type = call.data.get("filter", "all")
-            _LOGGER.info(f"Getting requests (filter={filter_type}) called by {user_context['username']}")
+            take = call.data.get("take", 100)
+            skip = call.data.get("skip", 0)
+            _LOGGER.info(f"Getting requests (filter={filter_type}, take={take}, skip={skip}) called by {user_context['username']}")
             
             # Use the existing API client
             api = hass.data[DOMAIN]["api"]
             
-            # Get requests using the /api/v1/request endpoint with filtering
-            requests_data = await api.get_requests(filter_type=filter_type)
+            # Get requests using the /api/v1/request endpoint with filtering and pagination
+            requests_data = await api.get_requests(filter_type=filter_type, take=take, skip=skip)
             
             if requests_data is None:
                 result = await LLMResponseBuilder.build_active_requests_response(
@@ -1086,6 +1088,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         handle_get_requests_service, 
         schema=vol.Schema({
             vol.Optional("filter"): str,
+            vol.Optional("take"): int,
+            vol.Optional("skip"): int,
         }),
         supports_response=True
     )

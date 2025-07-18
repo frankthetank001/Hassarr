@@ -145,15 +145,17 @@ class OverseerrAPI:
             self.last_error = error_text
             return None
     
-    async def get_requests(self, filter_type: str = "all") -> Optional[Dict]:
-        """Get requests with optional filtering.
+    async def get_requests(self, filter_type: str = "all", take: int = 100, skip: int = 0) -> Optional[Dict]:
+        """Get requests with optional filtering and pagination.
         
         Args:
             filter_type: Filter type (all, available, partial, allavailable, processing, pending, deleted)
+            take: Number of results to return (page size)
+            skip: Number of results to skip (for pagination)
         """
-        endpoint = "api/v1/request"
+        endpoint = f"api/v1/request?take={take}&skip={skip}"
         
-        # Get all requests first
+        # Get requests with pagination
         result = await self._make_request(endpoint)
         
         # Apply filtering if needed
