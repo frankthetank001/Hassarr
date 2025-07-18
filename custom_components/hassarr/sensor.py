@@ -132,7 +132,7 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
             media_results = media_data.get("results", [])
             
             # Calculate comprehensive metrics using both requests and media data
-            metrics = self._calculate_comprehensive_metrics(requests_results, media_results, jobs_list)
+            metrics = await self._calculate_comprehensive_metrics(requests_results, media_results, jobs_list)
             
             data = {
                 "overseerr_online": True,
@@ -151,7 +151,7 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.error(f"Error fetching data: {err}")
             raise UpdateFailed(f"Error communicating with Overseerr: {err}")
     
-    def _calculate_comprehensive_metrics(self, requests: list, media: list, jobs: list) -> dict:
+    async def _calculate_comprehensive_metrics(self, requests: list, media: list, jobs: list) -> dict:
         """Calculate comprehensive metrics from raw API data."""
         # Initialize counters
         request_status_counts = Counter()
@@ -213,8 +213,8 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
         top_requester = user_counts.most_common(1)[0] if user_counts else ("No requests", 0)
         
         # Find last requested movie and TV show
-        last_movie_request = self._find_last_request_by_type(requests, "movie")
-        last_tv_request = self._find_last_request_by_type(requests, "tv")
+        last_movie_request = await self._find_last_request_by_type(requests, "movie")
+        last_tv_request = await self._find_last_request_by_type(requests, "tv")
         
         return {
             # Request counts by status (from requests endpoint)
@@ -284,7 +284,7 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
             "type": "none"
         }
     
-    def _find_last_request_by_type(self, requests: list, media_type: str) -> dict:
+    async def _find_last_request_by_type(self, requests: list, media_type: str) -> dict:
         """Find the most recent request by media type."""
         filtered_requests = [r for r in requests if r.get("type") == media_type]
         
@@ -311,6 +311,20 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
         requested_by = latest_request.get("requestedBy", {}).get("displayName", "Unknown")
         requested_date = latest_request.get("createdAt", "Unknown")
         tmdb_id = media.get("tmdbId", 0)
+        
+        # If title is unknown but we have a tmdb_id, try to fetch the title
+        if title == "Unknown" and tmdb_id > 0:
+            try:
+                # Fetch media details from TMDB API
+                media_details = await self.api.get_media_details(media_type, tmdb_id)
+                if media_details:
+                    title = media_details.get("title") or media_details.get("name", "Unknown")
+                    _LOGGER.debug(f"Fetched title from TMDB for {media_type} {tmdb_id}: {title}")
+                else:
+                    title = f"Unknown ({media_type.title()} {tmdb_id})"
+            except Exception as e:
+                _LOGGER.warning(f"Failed to fetch title from TMDB for {media_type} {tmdb_id}: {e}")
+                title = f"Unknown ({media_type.title()} {tmdb_id})"
         
         # Format the date
         if requested_date != "Unknown":
