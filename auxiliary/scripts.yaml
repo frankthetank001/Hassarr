@@ -2,9 +2,7 @@
 # Note: Keep this filename comment for navigation and organization
 # This file exposes Hassarr services as script entities for chat assistant integration
 
-# =============================================================================
-# HASSARR CHAT ASSISTANT SCRIPTS
-# =============================================================================
+# Hassarr Chat Assistant Scripts
 # These scripts wrap the Hassarr services to make them available as entities
 # that the chat assistant can execute. Each script calls the corresponding
 # service and returns structured JSON responses for LLM interpretation.
@@ -226,9 +224,7 @@ hassarr_test_connection:
     - stop: ""
       response_variable: connection_result
 
-# =============================================================================
-# CONVENIENT ALIASES FOR COMMON REQUESTS
-# =============================================================================
+# Convenient aliases for common requests
 # These are shortcut scripts for common LLM queries to make interaction more natural
 
 hassarr_get_pending_requests:

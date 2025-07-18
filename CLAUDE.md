@@ -98,3 +98,9 @@ During integration setup, map Home Assistant users to Overseerr users for permis
 - Check HA logs for detailed error messages
 - Use `hassarr.test_connection` service to verify API connectivity
 - Enable debug logging for detailed service call traces
+
+## Development Guidelines
+
+- Avoid using massive comment blocks with "NEW" or "PREVIOUSLY" annotations
+- Keep comments descriptive and concise
+- Focus on clarity and professionalism in code comments and documentation

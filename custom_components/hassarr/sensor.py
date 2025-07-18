@@ -49,7 +49,7 @@ async def async_setup_entry(
         HassarrQueueStatusSensor(coordinator),
         HassarrJobsStatusSensor(coordinator),
         
-        # New comprehensive sensors
+        # Request-based sensors
         HassarrTotalRequestsSensor(coordinator),
         HassarrPendingRequestsSensor(coordinator),
         HassarrAvailableRequestsSensor(coordinator),
@@ -61,6 +61,15 @@ async def async_setup_entry(
         HassarrSystemHealthSensor(coordinator),
         HassarrNextJobSensor(coordinator),
         HassarrApiResponseTimeSensor(coordinator),
+        
+        # Media library sensors
+        HassarrTotalMediaSensor(coordinator),
+        HassarrAvailableMediaSensor(coordinator),
+        HassarrProcessingMediaSensor(coordinator),
+        
+        # Latest request tracking sensors
+        HassarrLastMovieRequestSensor(coordinator),
+        HassarrLastTVRequestSensor(coordinator),
     ]
     
     async_add_entities(entities, True)
@@ -90,6 +99,9 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
             # Fetch requests data
             requests_data = await self.api.get_requests()
             
+            # Fetch media data (comprehensive library view)
+            media_data = await self.api.get_media(filter_type="all", take=200)
+            
             # Fetch jobs data
             jobs_data = await self.api.get_jobs()
             
@@ -99,6 +111,10 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
             if requests_data is None:
                 _LOGGER.warning("Failed to fetch requests data from Overseerr")
                 requests_data = {"results": []}
+            
+            if media_data is None:
+                _LOGGER.warning("Failed to fetch media data from Overseerr")
+                media_data = {"results": []}
             
             if jobs_data is None:
                 _LOGGER.warning("Failed to fetch jobs data from Overseerr")
@@ -112,31 +128,34 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
             else:
                 jobs_list = []
             
-            results = requests_data.get("results", [])
+            requests_results = requests_data.get("results", [])
+            media_results = media_data.get("results", [])
             
-            # Calculate comprehensive metrics
-            metrics = self._calculate_comprehensive_metrics(results, jobs_list)
+            # Calculate comprehensive metrics using both requests and media data
+            metrics = self._calculate_comprehensive_metrics(requests_results, media_results, jobs_list)
             
             data = {
                 "overseerr_online": True,
-                "requests": results,
+                "requests": requests_results,
+                "media": media_results,
                 "jobs": jobs_list,
                 "api_response_time": api_response_time,
                 "last_update": self.hass.loop.time(),
                 **metrics
             }
             
-            _LOGGER.debug(f"Updated comprehensive data: {len(results)} requests, {len(jobs_list)} jobs, {api_response_time:.2f}s response time")
+            _LOGGER.debug(f"Updated comprehensive data: {len(requests_results)} requests, {len(media_results)} media, {len(jobs_list)} jobs, {api_response_time:.2f}s response time")
             return data
             
         except Exception as err:
             _LOGGER.error(f"Error fetching data: {err}")
             raise UpdateFailed(f"Error communicating with Overseerr: {err}")
     
-    def _calculate_comprehensive_metrics(self, requests: list, jobs: list) -> dict:
+    def _calculate_comprehensive_metrics(self, requests: list, media: list, jobs: list) -> dict:
         """Calculate comprehensive metrics from raw API data."""
         # Initialize counters
-        status_counts = Counter()
+        request_status_counts = Counter()
+        media_status_counts = Counter()
         type_counts = Counter()
         user_counts = Counter()
         recent_count = 0
@@ -147,9 +166,9 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
         
         # Process each request
         for request in requests:
-            # Count by status
+            # Count by status (request-based)
             status = request.get("status", 1)
-            status_counts[status] += 1
+            request_status_counts[status] += 1
             
             # Count by type
             req_type = request.get("type", "unknown")
@@ -170,6 +189,16 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
                 except:
                     pass  # Skip if date parsing fails
         
+        # Process each media item (comprehensive library view)
+        for media_item in media:
+            # Count by media status (more accurate than request status)
+            media_status = media_item.get("status", 1)
+            media_status_counts[media_status] += 1
+            
+            # Count by media type
+            media_type = media_item.get("mediaType", "unknown")
+            type_counts[media_type] += 1  # This will combine with request type counts
+        
         # Calculate job metrics
         running_jobs = len([j for j in jobs if j.get("running", False)])
         total_jobs = len(jobs)
@@ -177,19 +206,30 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
         # Find next scheduled job
         next_job_info = self._find_next_scheduled_job(jobs)
         
-        # Determine system health
-        system_health = self._calculate_system_health(requests, jobs, status_counts)
+        # Determine system health using combined data
+        system_health = self._calculate_system_health(requests, media, jobs, request_status_counts, media_status_counts)
         
         # Get top requester
         top_requester = user_counts.most_common(1)[0] if user_counts else ("No requests", 0)
         
+        # Find last requested movie and TV show
+        last_movie_request = self._find_last_request_by_type(requests, "movie")
+        last_tv_request = self._find_last_request_by_type(requests, "tv")
+        
         return {
-            # Request counts by status (corrected mapping)
+            # Request counts by status (from requests endpoint)
             "total_requests": len(requests),
-            "pending_requests": status_counts.get(2, 0),  # 2 = Pending Approval
-            "active_downloads": status_counts.get(3, 0),  # 3 = Processing/Downloading
-            "available_requests": status_counts.get(5, 0),  # 5 = Available in Library
-            "failed_requests": status_counts.get(7, 0),  # 7 = Deleted
+            "pending_requests": request_status_counts.get(2, 0),  # 2 = Pending Approval
+            "active_downloads": request_status_counts.get(3, 0),  # 3 = Processing/Downloading
+            "available_requests": request_status_counts.get(5, 0),  # 5 = Available in Library
+            "failed_requests": request_status_counts.get(7, 0),  # 7 = Deleted
+            
+            # Media counts by status (from media endpoint - more comprehensive)
+            "total_media": len(media),
+            "pending_media": media_status_counts.get(2, 0),  # 2 = Pending
+            "processing_media": media_status_counts.get(3, 0),  # 3 = Processing/Downloading
+            "available_media": media_status_counts.get(5, 0),  # 5 = Available in Library
+            "failed_media": media_status_counts.get(7, 0),  # 7 = Failed
             
             # Request counts by type
             "movie_requests": type_counts.get("movie", 0),
@@ -201,6 +241,10 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
             # User metrics
             "top_requester": top_requester[0],
             "top_requester_count": top_requester[1],
+            
+            # Latest request tracking
+            "last_movie_request": last_movie_request,
+            "last_tv_request": last_tv_request,
             
             # Job metrics
             "running_jobs": running_jobs,
@@ -240,26 +284,140 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
             "type": "none"
         }
     
-    def _calculate_system_health(self, requests: list, jobs: list, status_counts: Counter) -> str:
-        """Calculate overall system health status."""
-        failed_requests = status_counts.get(7, 0)  # Status 7 = Deleted/Failed
+    def _find_last_request_by_type(self, requests: list, media_type: str) -> dict:
+        """Find the most recent request by media type."""
+        filtered_requests = [r for r in requests if r.get("type") == media_type]
+        
+        if not filtered_requests:
+            return {
+                "title": "No requests",
+                "status": "none",
+                "requested_by": "N/A",
+                "requested_date": "N/A",
+                "tmdb_id": 0
+            }
+        
+        # Sort by creation date (most recent first)
+        try:
+            latest_request = max(filtered_requests, key=lambda x: x.get("createdAt", ""))
+        except (ValueError, TypeError):
+            latest_request = filtered_requests[0]
+        
+        # Extract media information
+        media = latest_request.get("media", {})
+        title = media.get("title") or media.get("name", "Unknown")
+        status = media.get("status", 1)
+        requested_by = latest_request.get("requestedBy", {}).get("displayName", "Unknown")
+        requested_date = latest_request.get("createdAt", "Unknown")
+        tmdb_id = media.get("tmdbId", 0)
+        
+        # Format the date
+        if requested_date != "Unknown":
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(requested_date.replace('Z', '+00:00'))
+                requested_date = dt.strftime("%Y-%m-%d %H:%M")
+            except:
+                pass
+        
+        # Extract download information if available
+        download_info = self._extract_download_info(media)
+        
+        return {
+            "title": title,
+            "status": status,
+            "status_text": self._get_status_text_for_status(status),
+            "requested_by": requested_by,
+            "requested_date": requested_date,
+            "tmdb_id": tmdb_id,
+            "download_info": download_info
+        }
+    
+    def _get_status_text_for_status(self, status: int) -> str:
+        """Convert status code to human-readable text."""
+        status_map = {
+            1: "Unknown",
+            2: "Pending",
+            3: "Processing",
+            4: "Partially Available",
+            5: "Available",
+            7: "Failed"
+        }
+        return status_map.get(status, f"Status {status}")
+    
+    def _extract_download_info(self, media: dict) -> dict:
+        """Extract download information from media data."""
+        if not media:
+            return None
+        
+        download_status = media.get("downloadStatus", [])
+        download_status_4k = media.get("downloadStatus4k", [])
+        all_downloads = download_status + download_status_4k
+        
+        if not all_downloads:
+            return None
+        
+        # Process download information
+        total_size = 0
+        total_remaining = 0
+        active_downloads = 0
+        download_titles = []
+        
+        for download in all_downloads:
+            if download.get("status") in ["downloading", "queued"]:
+                active_downloads += 1
+                download_titles.append(download.get("title", "Unknown"))
+            
+            size = download.get("size", 0)
+            size_left = download.get("sizeLeft", 0)
+            total_size += size
+            total_remaining += size_left
+        
+        # Calculate overall progress
+        if total_size > 0:
+            progress_percent = round(((total_size - total_remaining) / total_size) * 100, 1)
+        else:
+            progress_percent = 0
+        
+        return {
+            "has_downloads": True,
+            "active_downloads": active_downloads,
+            "total_downloads": len(all_downloads),
+            "progress_percent": progress_percent,
+            "total_size_gb": round(total_size / (1024 ** 3), 2) if total_size > 0 else 0,
+            "remaining_size_gb": round(total_remaining / (1024 ** 3), 2) if total_remaining > 0 else 0,
+            "download_titles": download_titles[:3],  # Limit to first 3 titles
+            "has_4k_downloads": len(download_status_4k) > 0
+        }
+    
+    def _calculate_system_health(self, requests: list, media: list, jobs: list, request_status_counts: Counter, media_status_counts: Counter) -> str:
+        """Calculate overall system health status using combined data."""
+        failed_requests = request_status_counts.get(7, 0)  # Status 7 = Deleted/Failed
+        failed_media = media_status_counts.get(7, 0)  # Status 7 = Failed
         total_requests = len(requests)
+        total_media = len(media)
         running_jobs = len([j for j in jobs if j.get("running", False)])
         
-        # Calculate health score
-        if total_requests == 0:
+        # Calculate health score using both requests and media data
+        if total_requests == 0 and total_media == 0:
             return "Healthy - No activity"
         
-        failure_rate = failed_requests / total_requests if total_requests > 0 else 0
+        # Use media data for more accurate failure rate if available
+        if total_media > 0:
+            failure_rate = failed_media / total_media
+            total_items = total_media
+        else:
+            failure_rate = failed_requests / total_requests if total_requests > 0 else 0
+            total_items = total_requests
         
         if failure_rate > 0.2:  # More than 20% failed
-            return "Degraded - High failure rate"
+            return f"Degraded - High failure rate ({int(failure_rate*100)}%)"
         elif failure_rate > 0.1:  # More than 10% failed
-            return "Warning - Some failures detected"
+            return f"Warning - Some failures detected ({int(failure_rate*100)}%)"
         elif running_jobs > 3:  # Too many jobs running
             return "Busy - Multiple jobs running"
         else:
-            return "Healthy - Operating normally"
+            return f"Healthy - Operating normally ({total_items} items)"
 
 
 class HassarrActiveDownloadsSensor(CoordinatorEntity, SensorEntity):
@@ -643,4 +801,211 @@ class HassarrApiResponseTimeSensor(CoordinatorEntity, SensorEntity):
         return {
             "overseerr_online": self.coordinator.data.get("overseerr_online", False),
             "last_update": self.coordinator.data.get("last_update"),
-        } 
+        }
+
+
+class HassarrTotalMediaSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for total media count in library."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr Total Media"
+        self._attr_unique_id = f"{DOMAIN}_total_media"
+        self._attr_icon = "mdi:database"
+        self._attr_native_unit_of_measurement = "items"
+
+    @property
+    def native_value(self) -> int:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("total_media", 0)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        return {
+            "total_requests": self.coordinator.data.get("total_requests", 0),
+            "requests_vs_media": f"{self.coordinator.data.get('total_requests', 0)}/{self.coordinator.data.get('total_media', 0)}",
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
+        }
+
+
+class HassarrAvailableMediaSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for available media count in library."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr Available Media"
+        self._attr_unique_id = f"{DOMAIN}_available_media"
+        self._attr_icon = "mdi:check-circle"
+        self._attr_native_unit_of_measurement = "items"
+
+    @property
+    def native_value(self) -> int:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("available_media", 0)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        total_media = self.coordinator.data.get("total_media", 0)
+        available_media = self.coordinator.data.get("available_media", 0)
+        completion_rate = (available_media / total_media * 100) if total_media > 0 else 0
+        
+        return {
+            "total_media": total_media,
+            "completion_rate": f"{completion_rate:.1f}%",
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
+        }
+
+
+class HassarrProcessingMediaSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for processing media count in library."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr Processing Media"
+        self._attr_unique_id = f"{DOMAIN}_processing_media"
+        self._attr_icon = "mdi:progress-download"
+        self._attr_native_unit_of_measurement = "items"
+
+    @property
+    def native_value(self) -> int:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("processing_media", 0)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        return {
+            "total_media": self.coordinator.data.get("total_media", 0),
+            "active_downloads": self.coordinator.data.get("active_downloads", 0),
+            "media_vs_requests": f"{self.coordinator.data.get('processing_media', 0)}/{self.coordinator.data.get('active_downloads', 0)}",
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
+        }
+
+
+class HassarrLastMovieRequestSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for the last requested movie."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr Last Movie Request"
+        self._attr_unique_id = f"{DOMAIN}_last_movie_request"
+        self._attr_icon = "mdi:movie"
+
+    @property
+    def native_value(self) -> str:
+        """Return the state of the sensor."""
+        last_movie = self.coordinator.data.get("last_movie_request", {})
+        title = last_movie.get("title", "No movie requests")
+        status = last_movie.get("status_text", "")
+        download_info = last_movie.get("download_info")
+        
+        if title == "No movie requests":
+            return title
+        
+        # Add download progress if available
+        if download_info and download_info.get("has_downloads"):
+            progress = download_info.get("progress_percent", 0)
+            return f"{title} ({status} - {progress}%)"
+        
+        return f"{title} ({status})" if status else title
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        last_movie = self.coordinator.data.get("last_movie_request", {})
+        download_info = last_movie.get("download_info")
+        
+        attributes = {
+            "title": last_movie.get("title", "No movie requests"),
+            "status": last_movie.get("status", 0),
+            "status_text": last_movie.get("status_text", "N/A"),
+            "requested_by": last_movie.get("requested_by", "N/A"),
+            "requested_date": last_movie.get("requested_date", "N/A"),
+            "tmdb_id": last_movie.get("tmdb_id", 0),
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
+        }
+        
+        # Add download information if available
+        if download_info:
+            attributes.update({
+                "has_downloads": download_info.get("has_downloads", False),
+                "active_downloads": download_info.get("active_downloads", 0),
+                "download_progress": download_info.get("progress_percent", 0),
+                "total_size_gb": download_info.get("total_size_gb", 0),
+                "remaining_size_gb": download_info.get("remaining_size_gb", 0),
+                "download_titles": download_info.get("download_titles", []),
+                "has_4k_downloads": download_info.get("has_4k_downloads", False)
+            })
+        
+        return attributes
+
+
+class HassarrLastTVRequestSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for the last requested TV show."""
+
+    def __init__(self, coordinator: HassarrDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = "Hassarr Last TV Request"
+        self._attr_unique_id = f"{DOMAIN}_last_tv_request"
+        self._attr_icon = "mdi:television"
+
+    @property
+    def native_value(self) -> str:
+        """Return the state of the sensor."""
+        last_tv = self.coordinator.data.get("last_tv_request", {})
+        title = last_tv.get("title", "No TV requests")
+        status = last_tv.get("status_text", "")
+        download_info = last_tv.get("download_info")
+        
+        if title == "No TV requests":
+            return title
+        
+        # Add download progress if available
+        if download_info and download_info.get("has_downloads"):
+            progress = download_info.get("progress_percent", 0)
+            active_downloads = download_info.get("active_downloads", 0)
+            return f"{title} ({status} - {active_downloads} downloading, {progress}%)"
+        
+        return f"{title} ({status})" if status else title
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional state attributes."""
+        last_tv = self.coordinator.data.get("last_tv_request", {})
+        download_info = last_tv.get("download_info")
+        
+        attributes = {
+            "title": last_tv.get("title", "No TV requests"),
+            "status": last_tv.get("status", 0),
+            "status_text": last_tv.get("status_text", "N/A"),
+            "requested_by": last_tv.get("requested_by", "N/A"),
+            "requested_date": last_tv.get("requested_date", "N/A"),
+            "tmdb_id": last_tv.get("tmdb_id", 0),
+            "overseerr_online": self.coordinator.data.get("overseerr_online", False),
+            "last_update": self.coordinator.data.get("last_update"),
+        }
+        
+        # Add download information if available
+        if download_info:
+            attributes.update({
+                "has_downloads": download_info.get("has_downloads", False),
+                "active_downloads": download_info.get("active_downloads", 0),
+                "download_progress": download_info.get("progress_percent", 0),
+                "total_size_gb": download_info.get("total_size_gb", 0),
+                "remaining_size_gb": download_info.get("remaining_size_gb", 0),
+                "download_titles": download_info.get("download_titles", []),
+                "has_4k_downloads": download_info.get("has_4k_downloads", False)
+            })
+        
+        return attributes
