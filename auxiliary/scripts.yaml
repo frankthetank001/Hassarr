@@ -140,8 +140,7 @@ hassarr_get_requests:
     - service: hassarr.get_requests
       data:
         filter: "{{ filter | default('all') }}"
-        take: 100
-        skip: 0
+        take: 200
       response_variable: requests_result
     - stop: ""
       response_variable: requests_result

@@ -1117,7 +1117,8 @@ class LLMResponseBuilder:
         requests_data: Dict = None,
         error_details: str = None,
         api = None,
-        use_media_endpoint: bool = False
+        use_media_endpoint: bool = False,
+        take_limit: int = None
     ) -> Dict:
         """Build LLM-optimized response for active requests.
         
@@ -1127,6 +1128,7 @@ class LLMResponseBuilder:
             error_details: Error details if any
             api: API client instance
             use_media_endpoint: Whether the data comes from /api/v1/media endpoint (for get_all_media service)
+            take_limit: Maximum number of results to include in response
         """
         
         if action == "connection_error":
@@ -1207,25 +1209,33 @@ class LLMResponseBuilder:
                                partially_available, failed_requests, other_requests]:
                 request_list.sort(key=lambda x: x.get("createdAt", ""), reverse=True)
             
-            # Build response prioritizing active requests (processing + pending)
+            # Build response with all requests, prioritizing active ones first
             active_requests = []
-            resolved_requests = []
+            all_other_requests = []
+            requests_added = 0
+            max_requests = take_limit or len(results)
             
             # Add processing requests first (highest priority)
             for request in processing_requests:
-                media_details = await LLMResponseBuilder._fetch_media_details_for_request(request, api, use_media_endpoint)
-                active_requests.append(LLMResponseBuilder._build_request_info(request, media_details, use_media_endpoint))
-            
-            # Add pending requests 
-            for request in pending_requests:
-                if len(active_requests) < 10:
+                if requests_added < max_requests:
                     media_details = await LLMResponseBuilder._fetch_media_details_for_request(request, api, use_media_endpoint)
                     active_requests.append(LLMResponseBuilder._build_request_info(request, media_details, use_media_endpoint))
+                    requests_added += 1
             
-            # Add a few resolved/completed requests for context
-            for request in available_requests[:3]:  # Show up to 3 recent completed
-                media_details = await LLMResponseBuilder._fetch_media_details_for_request(request, api, use_media_endpoint)
-                resolved_requests.append(LLMResponseBuilder._build_request_info(request, media_details, use_media_endpoint))
+            # Add pending requests to active requests
+            for request in pending_requests:
+                if requests_added < max_requests:
+                    media_details = await LLMResponseBuilder._fetch_media_details_for_request(request, api, use_media_endpoint)
+                    active_requests.append(LLMResponseBuilder._build_request_info(request, media_details, use_media_endpoint))
+                    requests_added += 1
+            
+            # Add all other requests (available, failed, partial, etc.)
+            for request_list in [available_requests, partially_available, failed_requests, other_requests]:
+                for request in request_list:
+                    if requests_added < max_requests:
+                        media_details = await LLMResponseBuilder._fetch_media_details_for_request(request, api, use_media_endpoint)
+                        all_other_requests.append(LLMResponseBuilder._build_request_info(request, media_details, use_media_endpoint))
+                        requests_added += 1
             
             # Count totals
             total_requests = len(results)
@@ -1256,6 +1266,7 @@ class LLMResponseBuilder:
             return {
                 "action": "requests_found",
                 "total_requests": total_requests,
+                "returned_requests": requests_added,
                 "status_breakdown": {
                     "processing_count": processing_count,
                     "pending_count": pending_count, 
@@ -1265,11 +1276,11 @@ class LLMResponseBuilder:
                     "other_count": other_count
                 },
                 "active_requests": active_requests,
-                "recent_completed": resolved_requests,
-                "message": f"Found {total_requests} total requests ({breakdown_text})",
+                "other_requests": all_other_requests,
+                "message": f"Found {total_requests} total requests, showing {requests_added} ({breakdown_text})",
                 "llm_instructions": {
-                    "response_guidance": "Focus on active requests (downloading/pending) and include specific season information for TV shows. Mention which seasons are downloading, available, or pending.",
-                    "priority_note": "Processing requests are shown first, then pending requests",
+                    "response_guidance": "Focus on active requests (downloading/pending) first, then show other requests. Include specific season information for TV shows.",
+                    "priority_note": "Active requests (processing/pending) are shown first, followed by all other requests",
                     "status_meanings": {
                         "processing": "Currently downloading or being processed", 
                         "pending": "Waiting for approval",
@@ -1279,7 +1290,7 @@ class LLMResponseBuilder:
                     },
                     "season_info_note": "For TV shows, season-specific details are included showing which specific seasons are downloading, available, or pending",
                     "episode_info_note": "Download progress includes individual episode information when available",
-                    "completed_note": "Recent completed requests are included for context"
+                    "structure_note": "Results are limited by the take parameter. Active requests are prioritized first."
                 },
                 "next_steps": {
                     "suggestion": "Use check_media_status with a specific title for detailed progress information",

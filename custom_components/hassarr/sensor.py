@@ -97,7 +97,7 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Fetching comprehensive data from Overseerr...")
             
             # Fetch requests data
-            requests_data = await self.api.get_requests()
+            requests_data = await self.api.get_requests(take=500)
             
             # Fetch media data (comprehensive library view)
             media_data = await self.api.get_media(filter_type="all", take=200)
