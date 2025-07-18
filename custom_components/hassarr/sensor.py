@@ -290,8 +290,9 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
         
         if not filtered_requests:
             return {
-                "title": "No requests",
-                "status": "none",
+                "title": f"No {media_type} requests",
+                "status": 0,
+                "status_text": "No requests",
                 "requested_by": "N/A",
                 "requested_date": "N/A",
                 "tmdb_id": 0
@@ -336,6 +337,7 @@ class HassarrDataUpdateCoordinator(DataUpdateCoordinator):
     def _get_status_text_for_status(self, status: int) -> str:
         """Convert status code to human-readable text."""
         status_map = {
+            0: "No requests",
             1: "Unknown",
             2: "Pending",
             3: "Processing",
