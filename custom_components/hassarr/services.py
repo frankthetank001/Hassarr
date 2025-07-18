@@ -145,10 +145,22 @@ class OverseerrAPI:
             self.last_error = error_text
             return None
     
-    async def get_requests(self) -> Optional[Dict]:
-        """Get all active requests."""
+    async def get_requests(self, filter_type: str = "all") -> Optional[Dict]:
+        """Get requests with optional filtering.
+        
+        Args:
+            filter_type: Filter type (all, available, partial, allavailable, processing, pending, deleted)
+        """
         endpoint = "api/v1/request"
-        return await self._make_request(endpoint)
+        
+        # Get all requests first
+        result = await self._make_request(endpoint)
+        
+        # Apply filtering if needed
+        if result and filter_type != "all":
+            result = self._filter_requests(result, filter_type)
+        
+        return result
     
     async def get_media(self, filter_type: str = "all", take: int = 20, skip: int = 0, sort: str = "mediaAdded") -> Optional[Dict]:
         """Get media from Overseerr using the /api/v1/media endpoint.
@@ -167,6 +179,56 @@ class OverseerrAPI:
         
         endpoint = f"api/v1/media?filter={filter_type}&take={take}&skip={skip}&sort={sort}"
         return await self._make_request(endpoint)
+    
+    def _filter_requests(self, requests_data: Dict, filter_type: str) -> Dict:
+        """Filter requests client-side based on media status.
+        
+        Args:
+            requests_data: Raw requests data from API
+            filter_type: Filter type to apply
+        """
+        if not requests_data or not requests_data.get("results"):
+            return requests_data
+        
+        filtered_results = []
+        
+        for request in requests_data["results"]:
+            media = request.get("media", {})
+            media_status = media.get("status", 1)
+            
+            # Apply filter based on media status
+            include_request = False
+            
+            if filter_type == "pending":
+                include_request = media_status == 2
+            elif filter_type == "processing":
+                include_request = media_status == 3
+            elif filter_type == "partial":
+                include_request = media_status == 4
+            elif filter_type == "available":
+                include_request = media_status == 5
+            elif filter_type == "allavailable":
+                include_request = media_status in [4, 5]  # Partial or fully available
+            elif filter_type == "deleted":
+                include_request = media_status == 7
+            else:
+                include_request = True  # "all" or unknown filter
+            
+            if include_request:
+                filtered_results.append(request)
+        
+        # Update the results and counts
+        filtered_data = requests_data.copy()
+        filtered_data["results"] = filtered_results
+        filtered_data["totalResults"] = len(filtered_results)
+        filtered_data["pageInfo"] = {
+            "page": 1,
+            "pages": 1,
+            "pageSize": len(filtered_results),
+            "results": len(filtered_results)
+        }
+        
+        return filtered_data
     
     async def search_media(self, query: str) -> Optional[Dict]:
         """Search for media in Overseerr."""
@@ -1062,7 +1124,7 @@ class LLMResponseBuilder:
             requests_data: Data from requests or media endpoint
             error_details: Error details if any
             api: API client instance
-            use_media_endpoint: Whether the data comes from /api/v1/media endpoint
+            use_media_endpoint: Whether the data comes from /api/v1/media endpoint (for get_all_media service)
         """
         
         if action == "connection_error":

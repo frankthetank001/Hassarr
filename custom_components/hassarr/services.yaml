@@ -74,16 +74,24 @@ remove_media:
   response:
     optional: true
 
-get_active_requests:
-  description: "Get current active requests with LLM-optimized response (focuses on processing requests, ordered by date)"
+get_requests:
+  description: "Get requests with LLM-optimized response (supports filtering by status)"
   fields:
-    use_media_endpoint:
-      description: "Use /api/v1/media endpoint instead of /api/v1/request (shows all media in system, not just requested)"
+    filter:
+      description: "Filter requests by status (all, available, partial, allavailable, processing, pending, deleted)"
       required: false
-      example: false
-      default: false
+      example: "all"
+      default: "all"
       selector:
-        boolean:
+        select:
+          options:
+            - "all"
+            - "available"
+            - "partial"
+            - "allavailable"
+            - "processing"
+            - "pending"
+            - "deleted"
   response:
     optional: true
 
@@ -105,10 +113,10 @@ get_resolved_requests:
   response:
     optional: true
 
-get_all_media:
-  description: "Get all media in library with LLM-optimized response (uses /api/v1/media endpoint for comprehensive view)"
+get_media:
+  description: "Get media from library with LLM-optimized response (uses /api/v1/media endpoint for comprehensive view)"
   fields:
-    filter_type:
+    filter:
       description: "Filter media by status (all, available, partial, allavailable, processing, pending, deleted)"
       required: false
       example: "all"

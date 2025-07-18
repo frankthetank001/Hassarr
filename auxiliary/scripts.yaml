@@ -117,16 +117,82 @@ hassarr_remove_media:
     - stop: ""
       response_variable: remove_result
 
-hassarr_get_active_requests:
-  alias: "Get Active Downloads from Overseerr"
-  description: "Get information about currently active downloads and pending requests, prioritizing items that are actively downloading."
+hassarr_get_requests:
+  alias: "Get Requests from Overseerr"
+  description: "Get information about requests from Overseerr with optional filtering by status (all, pending, processing, available, etc.)"
   icon: mdi:download-multiple
   mode: single
+  fields:
+    filter:
+      name: "Filter (Optional)"
+      description: "Filter requests by status: all, pending, processing, available, partial, allavailable, deleted. Leave empty for all requests."
+      required: false
+      selector:
+        select:
+          options:
+            - "all"
+            - "pending"
+            - "processing"
+            - "available"
+            - "partial"
+            - "allavailable"
+            - "deleted"
+      default: "all"
   sequence:
-    - service: hassarr.get_active_requests
+    - service: hassarr.get_requests
+      data:
+        filter: "{{ filter | default('all') }}"
       response_variable: requests_result
     - stop: ""
       response_variable: requests_result
+
+hassarr_get_media:
+  alias: "Get Media from Overseerr Library"
+  description: "Get comprehensive media information from Overseerr library with filtering and pagination support. Shows all media in the system, not just requested items."
+  icon: mdi:movie-open
+  mode: single
+  fields:
+    filter:
+      name: "Filter (Optional)"
+      description: "Filter media by status: all, pending, processing, available, partial, allavailable, deleted. Leave empty for all media."
+      required: false
+      selector:
+        select:
+          options:
+            - "all"
+            - "pending"
+            - "processing"
+            - "available"
+            - "partial"
+            - "allavailable"
+            - "deleted"
+      default: "all"
+    take:
+      name: "Results to Return (Optional)"
+      description: "Number of results to return (page size). Default is 50, max is 200."
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 200
+      default: 50
+    skip:
+      name: "Results to Skip (Optional)"
+      description: "Number of results to skip for pagination. Use 0 for first page, 50 for second page (if take=50), etc."
+      required: false
+      selector:
+        number:
+          min: 0
+      default: 0
+  sequence:
+    - service: hassarr.get_media
+      data:
+        filter: "{{ filter | default('all') }}"
+        take: "{{ take | default(50) }}"
+        skip: "{{ skip | default(0) }}"
+      response_variable: media_result
+    - stop: ""
+      response_variable: media_result
 
 hassarr_run_job:
   alias: "Run Overseerr Job"
@@ -159,3 +225,47 @@ hassarr_test_connection:
       response_variable: connection_result
     - stop: ""
       response_variable: connection_result
+
+# =============================================================================
+# CONVENIENT ALIASES FOR COMMON REQUESTS
+# =============================================================================
+# These are shortcut scripts for common LLM queries to make interaction more natural
+
+hassarr_get_pending_requests:
+  alias: "Get Pending Requests"
+  description: "Get all pending requests waiting for approval"
+  icon: mdi:clock-outline
+  mode: single
+  sequence:
+    - service: hassarr.get_requests
+      data:
+        filter: "pending"
+      response_variable: pending_result
+    - stop: ""
+      response_variable: pending_result
+
+hassarr_get_downloading_media:
+  alias: "Get Downloading Media"
+  description: "Get all media currently being downloaded or processed"
+  icon: mdi:download
+  mode: single
+  sequence:
+    - service: hassarr.get_media
+      data:
+        filter: "processing"
+      response_variable: downloading_result
+    - stop: ""
+      response_variable: downloading_result
+
+hassarr_get_available_media:
+  alias: "Get Available Media"
+  description: "Get all media that is available in the library"
+  icon: mdi:check-circle
+  mode: single
+  sequence:
+    - service: hassarr.get_media
+      data:
+        filter: "available"
+      response_variable: available_result
+    - stop: ""
+      response_variable: available_result
