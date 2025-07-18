@@ -181,6 +181,7 @@ hassarr_get_media:
       selector:
         number:
           min: 0
+          max: 1000
       default: 0
   sequence:
     - service: hassarr.get_media
