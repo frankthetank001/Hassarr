@@ -146,7 +146,7 @@ hassarr_get_requests:
 
 hassarr_get_media:
   alias: "Get Media from Overseerr Library"
-  description: "Get comprehensive media information from Overseerr library with filtering and pagination support. Shows all media in the system, not just requested items."
+  description: "Get comprehensive media information from Overseerr library with filtering support. Shows all media in the system, not just requested items."
   icon: mdi:movie-open
   mode: single
   fields:
@@ -165,30 +165,12 @@ hassarr_get_media:
             - "allavailable"
             - "deleted"
       default: "all"
-    take:
-      name: "Results to Return (Optional)"
-      description: "Number of results to return (page size). Default is 50, max is 200."
-      required: false
-      selector:
-        number:
-          min: 1
-          max: 200
-      default: 50
-    skip:
-      name: "Results to Skip (Optional)"
-      description: "Number of results to skip for pagination. Use 0 for first page, 50 for second page (if take=50), etc."
-      required: false
-      selector:
-        number:
-          min: 0
-          max: 1000
-      default: 0
   sequence:
     - service: hassarr.get_media
       data:
         filter: "{{ filter | default('all') }}"
-        take: "{{ take | default(50) }}"
-        skip: "{{ skip | default(0) }}"
+        take: 100
+        skip: 0
       response_variable: media_result
     - stop: ""
       response_variable: media_result
