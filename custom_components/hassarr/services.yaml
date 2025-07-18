@@ -140,6 +140,17 @@ get_media:
             - "processing"
             - "pending"
             - "deleted"
+    media_type:
+      description: "Filter by media type (all, movie, tv)"
+      required: false
+      example: "all"
+      default: "all"
+      selector:
+        select:
+          options:
+            - "all"
+            - "movie"
+            - "tv"
     take:
       description: "Number of results to return (maximum)"
       required: false

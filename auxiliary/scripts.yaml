@@ -166,10 +166,22 @@ hassarr_get_media:
             - "allavailable"
             - "deleted"
       default: "all"
+    media_type:
+      name: "Media Type (Optional)"
+      description: "Filter by media type: all, movie, tv. Leave empty for all media types."
+      required: false
+      selector:
+        select:
+          options:
+            - "all"
+            - "movie"
+            - "tv"
+      default: "all"
   sequence:
     - service: hassarr.get_media
       data:
         filter: "{{ filter | default('all') }}"
+        media_type: "{{ media_type | default('all') }}"
         take: 100
       response_variable: media_result
     - stop: ""
@@ -248,3 +260,61 @@ hassarr_get_available_media:
       response_variable: available_result
     - stop: ""
       response_variable: available_result
+
+hassarr_get_movies:
+  alias: "Get Movies"
+  description: "Get all movies from the library"
+  icon: mdi:movie
+  mode: single
+  sequence:
+    - service: hassarr.get_media
+      data:
+        media_type: "movie"
+        take: 100
+      response_variable: movies_result
+    - stop: ""
+      response_variable: movies_result
+
+hassarr_get_tv_shows:
+  alias: "Get TV Shows"
+  description: "Get all TV shows from the library"
+  icon: mdi:television
+  mode: single
+  sequence:
+    - service: hassarr.get_media
+      data:
+        media_type: "tv"
+        take: 100
+      response_variable: tv_result
+    - stop: ""
+      response_variable: tv_result
+
+hassarr_get_available_movies:
+  alias: "Get Available Movies"
+  description: "Get all movies that are available in the library"
+  icon: mdi:movie-check
+  mode: single
+  sequence:
+    - service: hassarr.get_media
+      data:
+        filter: "available"
+        media_type: "movie"
+        take: 100
+      response_variable: available_movies_result
+    - stop: ""
+      response_variable: available_movies_result
+
+hassarr_get_available_tv_shows:
+  alias: "Get Available TV Shows"
+  description: "Get all TV shows that are available in the library"
+  icon: mdi:television-check
+  mode: single
+  sequence:
+    - service: hassarr.get_media
+      data:
+        filter: "available"
+        media_type: "tv"
+        take: 100
+      response_variable: available_tv_result
+    - stop: ""
+      response_variable: available_tv_result

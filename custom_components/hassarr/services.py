@@ -164,11 +164,12 @@ class OverseerrAPI:
         
         return result
     
-    async def get_media(self, filter_type: str = "all", take: int = 20, skip: int = 0, sort: str = "mediaAdded") -> Optional[Dict]:
+    async def get_media(self, filter_type: str = "all", media_type: str = "all", take: int = 20, skip: int = 0, sort: str = "mediaAdded") -> Optional[Dict]:
         """Get media from Overseerr using the /api/v1/media endpoint.
         
         Args:
             filter_type: Filter type (all, available, partial, allavailable, processing, pending, deleted)
+            media_type: Media type filter (all, movie, tv)
             take: Number of results to return (page size)
             skip: Number of results to skip (for pagination)
             sort: Sort order (mediaAdded, title, etc.)
@@ -179,8 +180,20 @@ class OverseerrAPI:
             _LOGGER.warning(f"Invalid filter type '{filter_type}', defaulting to 'all'")
             filter_type = "all"
         
+        # Validate media type
+        valid_media_types = ["all", "movie", "tv"]
+        if media_type not in valid_media_types:
+            _LOGGER.warning(f"Invalid media type '{media_type}', defaulting to 'all'")
+            media_type = "all"
+        
         endpoint = f"api/v1/media?filter={filter_type}&take={take}&skip={skip}&sort={sort}"
-        return await self._make_request(endpoint)
+        result = await self._make_request(endpoint)
+        
+        # Apply media type filtering if needed
+        if result and media_type != "all":
+            result = self._filter_media_by_type(result, media_type)
+        
+        return result
     
     def _filter_requests(self, requests_data: Dict, filter_type: str) -> Dict:
         """Filter requests client-side based on media status.
@@ -229,6 +242,48 @@ class OverseerrAPI:
             "pageSize": len(filtered_results),
             "results": len(filtered_results)
         }
+        
+        return filtered_data
+    
+    def _filter_media_by_type(self, media_data: Dict, media_type: str) -> Dict:
+        """Filter media client-side based on media type.
+        
+        Args:
+            media_data: Raw media data from API
+            media_type: Media type to filter by (movie, tv)
+        """
+        if not media_data or not media_data.get("results"):
+            return media_data
+        
+        filtered_results = []
+        
+        for media in media_data["results"]:
+            include_media = False
+            
+            # Get media type from the media object
+            current_media_type = media.get("mediaType", "unknown")
+            
+            if media_type == "movie":
+                include_media = current_media_type == "movie"
+            elif media_type == "tv":
+                include_media = current_media_type == "tv"
+            else:
+                include_media = True  # "all" or unknown filter
+            
+            if include_media:
+                filtered_results.append(media)
+        
+        # Update the results and counts
+        filtered_data = media_data.copy()
+        filtered_data["results"] = filtered_results
+        filtered_data["totalResults"] = len(filtered_results)
+        if "pageInfo" in filtered_data:
+            filtered_data["pageInfo"] = {
+                "page": 1,
+                "pages": 1,
+                "pageSize": len(filtered_results),
+                "results": len(filtered_results)
+            }
         
         return filtered_data
     

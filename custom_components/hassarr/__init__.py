@@ -862,15 +862,16 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         try:
             user_context = await _get_user_context(call)
             filter_type = call.data.get("filter", "all")
+            media_type = call.data.get("media_type", "all")
             take = call.data.get("take", 100)
             
-            _LOGGER.info(f"Getting media (filter={filter_type}, take={take}) called by {user_context['username']}")
+            _LOGGER.info(f"Getting media (filter={filter_type}, media_type={media_type}, take={take}) called by {user_context['username']}")
             
             # Use the existing API client
             api = hass.data[DOMAIN]["api"]
             
             # Get media data from /api/v1/media endpoint
-            media_data = await api.get_media(filter_type=filter_type, take=take, skip=0)
+            media_data = await api.get_media(filter_type=filter_type, media_type=media_type, take=take, skip=0)
             
             if media_data is None:
                 result = await LLMResponseBuilder.build_active_requests_response(
@@ -1099,6 +1100,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         handle_get_media_service, 
         schema=vol.Schema({
             vol.Optional("filter"): str,
+            vol.Optional("media_type"): str,
             vol.Optional("take"): int,
         }),
         supports_response=True
